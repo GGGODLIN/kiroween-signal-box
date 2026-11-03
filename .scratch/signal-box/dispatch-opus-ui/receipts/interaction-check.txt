@@ -1,0 +1,12 @@
+hover hint opacity: 1
+after Tab from lever 1, focus on: Lever 2, Junction Crossover Points, NORM
+focus ring opacity on lever 2: 0.85
+Enter on lever 2 -> aria-pressed=true
+digits 3,1 -> lever3=true lever1=true
+register: #1 North Up Home Signal pulled
+MCP refused register: Refused by EARS-ILK-01 | MCP request_route · Migrator → SOUTH_TO_BRIDGE. South Branch Signal #4 is mechanically locked in NORMAL while North Up S
+MCP granted register: Route granted · SOUTH_TO_BRIDGE | MCP request_route · Migrator → SOUTH_TO_BRIDGE. The agent threw R3 · P2 · P3 · P4. Locks #1 · #3 · #8. Frees #4.
+mute -> aria-pressed=false register unchanged=True
+console errors/warnings: []
+reduced-motion lever transition-duration: 0.001s
+phone scrollWidth=390 (viewport 390)
