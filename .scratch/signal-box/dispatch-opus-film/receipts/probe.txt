@@ -1,0 +1,30 @@
+Installed 16 packages in 143ms
+
+comp.html — 1351 samples at 30 fps, 19 tracked elements (__track)
+continuity  score 1.00  — 7 boundaries: 7 carried, 0 anchored, 0 bare; 0 exempt; hard cuts 0, bursts []
+  t=  4.43  J 0.17  carried   via frame:                                            before frame:, diagram: | after bed:, frame:
+  t= 12.70  J 0.11  carried   via frame:, handle3:, handle4:                        before diagram:, frame: | after frame:, plateA:
+  t= 18.90  J 0.15  carried   via bed:, bar:, frame:                                before bed:, frame: | after frame:, log:
+  t= 25.93  J 0.15  carried   via frame:, shrink:, log:                             before frame:, log: | after frame:, log:
+  t= 30.53  J 0.15  carried   via frame:                                            before frame:, shrink: | after plateB:, frame:
+  t= 33.43  J 0.18  carried   via frame:, handle1:, handle3:                        before plateB:, frame: | after frame:, bed:
+  t= 38.50  J 0.01  carried   via bar:                                              before frame:, bed: | after wordmark:, bar:
+curves      peak 744 px/frame (diagram: at 25.67 s) · travel on soft curves 79 % · median t80 0.63 · 115 moves
+  frame:                                    25.67–26.30 s  path   2660  t80 0.58  peak   680  overshoot 0.00
+  frame:                                    30.10–30.87 s  path   2487  t80 0.56  peak   638  overshoot 0.00
+  diagram:                                  25.67–26.00 s  path   1744  t80 1.00  peak   744  overshoot 0.00
+  diagram:                                  30.47–30.87 s  path   1308  t80 0.25  peak   614  overshoot 0.00
+  log:                                      25.70–26.27 s  path   1149  t80 0.59  peak   298  overshoot 0.00
+  bed:                                      18.60–19.53 s  path   1144  t80 0.54  peak   203  overshoot 0.00
+  frame:                                    18.57–19.53 s  path   1102  t80 0.59  peak   236  overshoot 0.00
+  frame:                                    12.47–13.00 s  path   1092  t80 0.56  peak   309  overshoot 0.00
+framing  handle3: wholly in frame 0.3–1 s — off at 0 of 22 samples
+framing  dog4: wholly in frame 14.5–16.3 s — off at 0 of 55 samples
+framing  plateA: wholly in frame 13.4–16.3 s — off at 0 of 88 samples
+framing  shrink: wholly in frame 26.5–29.9 s — off at 0 of 103 samples
+framing  plateB: wholly in frame 31–33 s — off at 0 of 61 samples
+framing  spec: wholly in frame 33.9–34.9 s — off at 0 of 31 samples
+framing  plateC: wholly in frame 35.5–37.4 s — off at 0 of 58 samples
+framing  wordmark: wholly in frame 39.2–45 s — off at 0 of 175 samples
+
+wrote probe//tracks.json and probe//curves.png

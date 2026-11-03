@@ -1,0 +1,20 @@
+{
+  "backend": "herdr-core",
+  "parent_backend": "herdr-core",
+  "worker_backend": "herdr-core",
+  "name": "opus-signal-box-film",
+  "worker_id": "t38",
+  "parent_id": "t1x",
+  "parent_session_id": "f23c3eb1-31d5-4044-92c3-05cecd0f395d",
+  "pane_id": "t38",
+  "tab_id": "tbfe433d0ddd501d2cbfbe45526bd086e5",
+  "session_id": "b8ef5792-144f-422c-9e2a-b880ffa83ed2",
+  "log": "/Users/linhancheng/Desktop/projects/kiroween-signal-box/.scratch/signal-box/dispatch-opus-film/receipts/opus-signal-box-film.log",
+  "cwd": "/Users/linhancheng/Desktop/projects/kiroween-signal-box",
+  "harness": "claude",
+  "config_dir": "/Users/linhancheng/.claude-team-p",
+  "recipe": {
+    "model": "opus[1m]",
+    "effort": "max"
+  }
+}
