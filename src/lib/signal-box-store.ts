@@ -13,12 +13,9 @@ import {
 } from './interlocking.ts';
 import {
   generatePbtTrialReceipt,
-  replayCounterexampleSequence,
-  runInterlockingExorcism,
   type CounterexampleReplayBundle,
   type ExorcismReport,
   type PbtTrialReceipt,
-  type ReplayResult,
 } from './pbt-exorcist.ts';
 
 export type SoundCue =
@@ -30,12 +27,10 @@ export type SoundCue =
 
 export interface TappetBarState {
   ruleId: string;
-  description: string;
   appliesToLever: LeverId;
   targetIntent: 'PULL' | 'RELEASE';
   earsClause: string;
   engaged: boolean;
-  reason: string | null;
 }
 
 export interface SignalBoxStoreState {
@@ -48,7 +43,6 @@ export interface SignalBoxStoreState {
   trialReceipt: PbtTrialReceipt | null;
   replayBundle: CounterexampleReplayBundle | null;
   replayCursor: number | null;
-  replayVerification: ReplayResult | null;
   collisionBanner: string | null;
 }
 
@@ -141,12 +135,10 @@ function computeTappetBars(frame: FrameState): TappetBarState[] {
     const checkResult = rule.check(frame.levers);
     return {
       ruleId: rule.ruleId,
-      description: rule.description,
       appliesToLever: rule.appliesToLever,
       targetIntent: rule.targetIntent,
       earsClause: rule.earsClause,
       engaged: !checkResult.allowed,
-      reason: checkResult.reason ?? null,
     };
   });
 }
@@ -183,7 +175,6 @@ export function createSignalBoxStore(
     trialReceipt: null,
     replayBundle: null,
     replayCursor: null,
-    replayVerification: null,
     collisionBanner: null,
   };
 
@@ -226,7 +217,6 @@ export function createSignalBoxStore(
         exorcismReport: null,
         replayBundle: null,
         replayCursor: null,
-        replayVerification: null,
         collisionBanner: null,
       };
       return state;
@@ -241,11 +231,12 @@ export function createSignalBoxStore(
     },
 
     runExorcism: (): SignalBoxStoreState => {
-      const exorcismReport = runInterlockingExorcism(state.frame.presetId);
       const trialReceipt = generatePbtTrialReceipt();
+      const exorcismReport =
+        state.frame.presetId === 'STANDARD_SAFE'
+          ? trialReceipt.safeReport
+          : trialReceipt.cursedReport;
       const replayBundle = exorcismReport.counterexample;
-      const replayVerification =
-        replayBundle !== null ? replayCounterexampleSequence(replayBundle) : null;
       const resetFrame = createFrameState(state.frame.presetId);
       const resetTopology = evaluatePhysicalTopology(resetFrame);
 
@@ -259,7 +250,6 @@ export function createSignalBoxStore(
         trialReceipt,
         replayBundle,
         replayCursor: null,
-        replayVerification,
         collisionBanner: null,
       };
       return state;
@@ -338,8 +328,6 @@ function buildRouteActionSequence(
         }
         actions.push({ leverId: 2, intent: 'PULL' });
       }
-      actions.push({ leverId: 3, intent: 'PULL' });
-    } else if (levers[3] === 'NORMAL') {
       actions.push({ leverId: 3, intent: 'PULL' });
     }
     actions.push({ leverId: 4, intent: 'PULL' });

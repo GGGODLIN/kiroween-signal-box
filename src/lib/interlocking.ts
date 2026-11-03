@@ -11,7 +11,6 @@ export type LeverAction = {
 
 export type InterlockRule = {
   ruleId: string;
-  description: string;
   earsClause: string;
   appliesToLever: LeverId;
   targetIntent: 'PULL' | 'RELEASE';
@@ -142,10 +141,58 @@ function deriveActiveRoutesAndBlocks(levers: Record<LeverId, LeverState>): {
 export const getInterlockPreset = (presetId: PresetId): InterlockRule[] => {
   assertValidPresetId(presetId);
 
-  const sharedRulesBeforeIlk05: InterlockRule[] = [
+  const ruleIlk01: InterlockRule[] =
+    presetId === 'STANDARD_SAFE'
+      ? [
+          {
+            ruleId: 'EARS-ILK-01',
+            earsClause:
+              'WHEN North Up Home Signal #1 is REVERSE, THE SYSTEM SHALL mechanically lock South Branch Home Signal #4 in NORMAL to prevent converging collisions on junction-throat and schema-bridge.',
+            appliesToLever: 4,
+            targetIntent: 'PULL',
+            check: (levers) => {
+              if (levers[1] === 'REVERSE') {
+                return {
+                  allowed: false,
+                  reason:
+                    'South Branch Signal #4 is mechanically locked in NORMAL while North Up Signal #1 is REVERSE.',
+                };
+              }
+              return { allowed: true };
+            },
+          },
+        ]
+      : [];
+
+  const rulesIlk03: InterlockRule[] = (['PULL', 'RELEASE'] as const).map(
+    (targetIntent) => ({
+      ruleId: 'EARS-ILK-03',
+      earsClause:
+        'WHEN Facing Point Lock #3 is REVERSE or any of Signals #1, #4, #6 is REVERSE, THE SYSTEM SHALL lock Point #2 in its current position.',
+      appliesToLever: 2,
+      targetIntent,
+      check: (levers) => {
+        if (
+          levers[3] === 'REVERSE' ||
+          levers[1] === 'REVERSE' ||
+          levers[4] === 'REVERSE' ||
+          levers[6] === 'REVERSE'
+        ) {
+          return {
+            allowed: false,
+            reason:
+              'Point #2 is mechanically locked by Facing Point Lock #3 (REVERSE) or an active junction signal.',
+          };
+        }
+        return { allowed: true };
+      },
+    }),
+  );
+
+  return [
+    ...ruleIlk01,
     {
       ruleId: 'EARS-ILK-02',
-      description: 'Backlock Facing Point Lock #3 while any junction signal (#1, #4, #6) is REVERSE.',
       earsClause:
         'WHEN any junction signal (#1, #4, #6) is REVERSE, THE SYSTEM SHALL backlock Facing Point Lock #3 in REVERSE so the switch cannot be unlocked under a clear signal.',
       appliesToLever: 3,
@@ -165,55 +212,9 @@ export const getInterlockPreset = (presetId: PresetId): InterlockRule[] => {
         return { allowed: true };
       },
     },
-    {
-      ruleId: 'EARS-ILK-03',
-      description: 'Lock Point #2 (PULL) when FPL #3 is plunged or any junction signal (#1, #4, #6) is clear.',
-      earsClause:
-        'WHEN Facing Point Lock #3 is REVERSE or any of Signals #1, #4, #6 is REVERSE, THE SYSTEM SHALL lock Point #2 in its current position.',
-      appliesToLever: 2,
-      targetIntent: 'PULL',
-      check: (levers) => {
-        if (
-          levers[3] === 'REVERSE' ||
-          levers[1] === 'REVERSE' ||
-          levers[4] === 'REVERSE' ||
-          levers[6] === 'REVERSE'
-        ) {
-          return {
-            allowed: false,
-            reason:
-              'Point #2 is mechanically locked by Facing Point Lock #3 (REVERSE) or an active junction signal.',
-          };
-        }
-        return { allowed: true };
-      },
-    },
-    {
-      ruleId: 'EARS-ILK-03',
-      description: 'Lock Point #2 (RELEASE) when FPL #3 is plunged or any junction signal (#1, #4, #6) is clear.',
-      earsClause:
-        'WHEN Facing Point Lock #3 is REVERSE or any of Signals #1, #4, #6 is REVERSE, THE SYSTEM SHALL lock Point #2 in its current position.',
-      appliesToLever: 2,
-      targetIntent: 'RELEASE',
-      check: (levers) => {
-        if (
-          levers[3] === 'REVERSE' ||
-          levers[1] === 'REVERSE' ||
-          levers[4] === 'REVERSE' ||
-          levers[6] === 'REVERSE'
-        ) {
-          return {
-            allowed: false,
-            reason:
-              'Point #2 is mechanically locked by Facing Point Lock #3 (REVERSE) or an active junction signal.',
-          };
-        }
-        return { allowed: true };
-      },
-    },
+    ...rulesIlk03,
     {
       ruleId: 'EARS-ILK-04',
-      description: 'North Up Home Signal #1 requires Point #2 NORMAL, FPL #3 REVERSE, Signals #4/#5/#6 NORMAL, and Lever #8 NORMAL.',
       earsClause:
         'WHEN pulling North Up Home Signal #1, THE SYSTEM SHALL require Point #2 in NORMAL, FPL #3 in REVERSE, Signals #4, #5, #6 in NORMAL, and Maintenance Isolation Lock #8 in NORMAL.',
       appliesToLever: 1,
@@ -250,12 +251,47 @@ export const getInterlockPreset = (presetId: PresetId): InterlockRule[] => {
         return { allowed: true };
       },
     },
-  ];
-
-  const sharedRulesAfterIlk05: InterlockRule[] = [
+    {
+      ruleId: 'EARS-ILK-05',
+      earsClause:
+        presetId === 'STANDARD_SAFE'
+          ? 'WHEN pulling South Branch Home Signal #4, THE SYSTEM SHALL require Point #2 in REVERSE, FPL #3 in REVERSE, conflicting Signals #1, #5, #6 in NORMAL, and Maintenance Isolation Lock #8 in NORMAL.'
+          : 'WHEN pulling South Branch Home Signal #4, THE SYSTEM SHALL require FPL #3 in REVERSE and Maintenance Isolation Lock #8 in NORMAL (CURSED: missing Point #2 and Signal #1 checks when Signal #1 is REVERSE).',
+      appliesToLever: 4,
+      targetIntent: 'PULL',
+      check: (levers) => {
+        if (
+          (presetId === 'STANDARD_SAFE' || levers[1] === 'NORMAL') &&
+          levers[2] !== 'REVERSE'
+        ) {
+          return {
+            allowed: false,
+            reason: 'Signal #4 requires Crossover Point #2 in REVERSE.',
+          };
+        }
+        if (levers[3] !== 'REVERSE') {
+          return {
+            allowed: false,
+            reason: 'Signal #4 requires Facing Point Lock #3 plunged (REVERSE).',
+          };
+        }
+        if (levers[5] !== 'NORMAL' || levers[6] !== 'NORMAL') {
+          return {
+            allowed: false,
+            reason: 'Signal #4 requires Signals #5 and #6 in NORMAL.',
+          };
+        }
+        if (levers[8] !== 'NORMAL') {
+          return {
+            allowed: false,
+            reason: 'Signal #4 is locked while Maintenance Isolation Lock #8 is REVERSE.',
+          };
+        }
+        return { allowed: true };
+      },
+    },
     {
       ruleId: 'EARS-ILK-06',
-      description: 'Schema Bridge Distant Signal #5 requires Bridge Token Clearance #7 REVERSE and Signals #1, #4, #6, and Lever #8 NORMAL.',
       earsClause:
         'WHEN pulling Schema Bridge Distant Signal #5, THE SYSTEM SHALL require Bridge Token Clearance #7 in REVERSE, conflicting Signals #1, #4, #6 in NORMAL, and Maintenance Isolation Lock #8 in NORMAL.',
       appliesToLever: 5,
@@ -288,7 +324,6 @@ export const getInterlockPreset = (presetId: PresetId): InterlockRule[] => {
     },
     {
       ruleId: 'EARS-ILK-06',
-      description: 'Backlock Bridge Token Clearance #7 while Signal #5 is clear.',
       earsClause:
         'WHEN Schema Bridge Distant Signal #5 is REVERSE, THE SYSTEM SHALL backlock Bridge Token Clearance #7 in REVERSE.',
       appliesToLever: 7,
@@ -305,7 +340,6 @@ export const getInterlockPreset = (presetId: PresetId): InterlockRule[] => {
     },
     {
       ruleId: 'EARS-ILK-07',
-      description: 'Shunt & Audit Dwarf Signal #6 requires Lever #8 REVERSE, FPL #3 REVERSE, and Signals #1, #4, #5 NORMAL.',
       earsClause:
         'WHEN pulling Shunt & Audit Dwarf Signal #6, THE SYSTEM SHALL require Maintenance Isolation Lock #8 in REVERSE, Facing Point Lock #3 in REVERSE, and Signals #1, #4, #5 in NORMAL.',
       appliesToLever: 6,
@@ -338,7 +372,6 @@ export const getInterlockPreset = (presetId: PresetId): InterlockRule[] => {
     },
     {
       ruleId: 'EARS-ILK-07',
-      description: 'Backlock Maintenance Isolation Lock #8 while Signal #6 is clear.',
       earsClause:
         'WHEN Shunt & Audit Dwarf Signal #6 is REVERSE, THE SYSTEM SHALL backlock Maintenance Isolation Lock #8 in REVERSE.',
       appliesToLever: 8,
@@ -355,7 +388,6 @@ export const getInterlockPreset = (presetId: PresetId): InterlockRule[] => {
     },
     {
       ruleId: 'EARS-ILK-08',
-      description: 'Maintenance Isolation Lock #8 requires Signals #1, #4, and #5 in NORMAL.',
       earsClause:
         'WHEN pulling Maintenance Isolation Lock #8, THE SYSTEM SHALL require mainline Signals #1, #4, and #5 in NORMAL.',
       appliesToLever: 8,
@@ -374,118 +406,6 @@ export const getInterlockPreset = (presetId: PresetId): InterlockRule[] => {
         return { allowed: true };
       },
     },
-  ];
-
-  if (presetId === 'STANDARD_SAFE') {
-    const ruleIlk01: InterlockRule = {
-      ruleId: 'EARS-ILK-01',
-      description: 'Mutual exclusion between North Up Home Signal #1 and South Branch Home Signal #4.',
-      earsClause:
-        'WHEN North Up Home Signal #1 is REVERSE, THE SYSTEM SHALL mechanically lock South Branch Home Signal #4 in NORMAL to prevent converging collisions on junction-throat and schema-bridge.',
-      appliesToLever: 4,
-      targetIntent: 'PULL',
-      check: (levers) => {
-        if (levers[1] === 'REVERSE') {
-          return {
-            allowed: false,
-            reason:
-              'South Branch Signal #4 is mechanically locked in NORMAL while North Up Signal #1 is REVERSE.',
-          };
-        }
-        return { allowed: true };
-      },
-    };
-
-    const ruleIlk05Standard: InterlockRule = {
-      ruleId: 'EARS-ILK-05',
-      description: 'South Branch Home Signal #4 requires Point #2 REVERSE, FPL #3 REVERSE, Signals #1/#5/#6 NORMAL, and Lever #8 NORMAL.',
-      earsClause:
-        'WHEN pulling South Branch Home Signal #4, THE SYSTEM SHALL require Point #2 in REVERSE, FPL #3 in REVERSE, conflicting Signals #1, #5, #6 in NORMAL, and Maintenance Isolation Lock #8 in NORMAL.',
-      appliesToLever: 4,
-      targetIntent: 'PULL',
-      check: (levers) => {
-        if (levers[2] !== 'REVERSE') {
-          return {
-            allowed: false,
-            reason: 'Signal #4 requires Crossover Point #2 in REVERSE.',
-          };
-        }
-        if (levers[3] !== 'REVERSE') {
-          return {
-            allowed: false,
-            reason: 'Signal #4 requires Facing Point Lock #3 plunged (REVERSE).',
-          };
-        }
-        if (
-          levers[1] !== 'NORMAL' ||
-          levers[5] !== 'NORMAL' ||
-          levers[6] !== 'NORMAL'
-        ) {
-          return {
-            allowed: false,
-            reason: 'Signal #4 requires conflicting Signals #1, #5, and #6 in NORMAL.',
-          };
-        }
-        if (levers[8] !== 'NORMAL') {
-          return {
-            allowed: false,
-            reason: 'Signal #4 is locked while Maintenance Isolation Lock #8 is REVERSE.',
-          };
-        }
-        return { allowed: true };
-      },
-    };
-
-    return [
-      ruleIlk01,
-      ...sharedRulesBeforeIlk05,
-      ruleIlk05Standard,
-      ...sharedRulesAfterIlk05,
-    ];
-  }
-
-  // Fault-injected preset omits EARS-ILK-01 and weakens EARS-ILK-05 (omitting Point #2 === REVERSE and Signal #1 === NORMAL)
-  // so the SUT permits clearing Signal #4 while Signal #1 is already REVERSE and Point #2 is NORMAL.
-  const ruleIlk05Cursed: InterlockRule = {
-    ruleId: 'EARS-ILK-05',
-    description: 'Cursed South Branch Signal #4 rule (missing Point #2 REVERSE and Signal #1 NORMAL checks when Signal #1 is REVERSE).',
-    earsClause:
-      'WHEN pulling South Branch Home Signal #4, THE SYSTEM SHALL require FPL #3 in REVERSE and Maintenance Isolation Lock #8 in NORMAL (CURSED: missing Point #2 and Signal #1 checks when Signal #1 is REVERSE).',
-    appliesToLever: 4,
-    targetIntent: 'PULL',
-    check: (levers) => {
-      if (levers[1] === 'NORMAL' && levers[2] !== 'REVERSE') {
-        return {
-          allowed: false,
-          reason: 'Signal #4 requires Junction Crossover Point #2 in REVERSE.',
-        };
-      }
-      if (levers[3] !== 'REVERSE') {
-        return {
-          allowed: false,
-          reason: 'Signal #4 requires Facing Point Lock #3 plunged (REVERSE).',
-        };
-      }
-      if (levers[5] !== 'NORMAL' || levers[6] !== 'NORMAL') {
-        return {
-          allowed: false,
-          reason: 'Signal #4 requires Signals #5 and #6 in NORMAL.',
-        };
-      }
-      if (levers[8] !== 'NORMAL') {
-        return {
-          allowed: false,
-          reason: 'Signal #4 is locked while Maintenance Isolation Lock #8 is REVERSE.',
-        };
-      }
-      return { allowed: true };
-    },
-  };
-
-  return [
-    ...sharedRulesBeforeIlk05,
-    ruleIlk05Cursed,
-    ...sharedRulesAfterIlk05,
   ];
 };
 
@@ -587,7 +507,7 @@ export const applyLeverAction = (state: FrameState, action: LeverAction): FrameS
   for (const rule of matchingRules) {
     const checkResult = rule.check(state.levers);
     if (!checkResult.allowed) {
-      const reason = checkResult.reason ?? rule.description;
+      const reason = checkResult.reason ?? rule.earsClause;
       const blockedStep: StepHistoryEntry = {
         stepIndex: clonedHistory.length,
         action: { leverId: action.leverId, intent: action.intent },

@@ -73,7 +73,7 @@ test('AC 1: createSignalBoxStore exposes lever state, tappet locking bars, activ
 
   const bundle = afterExorcism.replayBundle!;
   const cliReplay = replayCounterexampleSequence(bundle);
-  assert.deepEqual(afterExorcism.replayVerification, cliReplay);
+  assert.equal(cliReplay.reproducedViolation, true);
 
   let stepState = afterExorcism;
   for (let i = 0; i < bundle.shrunkActions.length; i++) {
@@ -109,7 +109,6 @@ test('AC 2: Switching presets (STANDARD_SAFE <-> CURSED_MISSING_CROSSOVER_LOCK) 
   assert.equal(switchedToSafe.frame.presetId, 'STANDARD_SAFE');
   assert.equal(switchedToSafe.replayBundle, null);
   assert.equal(switchedToSafe.replayCursor, null);
-  assert.equal(switchedToSafe.replayVerification, null);
   assert.equal(switchedToSafe.exorcismReport, null);
   assert.equal(switchedToSafe.collisionBanner, null);
   assert.equal(switchedToSafe.topology.safe, true);
