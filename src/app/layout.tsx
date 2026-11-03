@@ -1,10 +1,38 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
+import { Archivo, Fraunces, Geist_Mono } from 'next/font/google';
 import type { ReactNode } from 'react';
 
+import './globals.css';
+
+// Archivo is loaded with its width axis so CSS can pin it at wdth 62 — the "Archivo Condensed" of the film's look.
+const fraunces = Fraunces({
+  subsets: ['latin'],
+  axes: ['opsz'],
+  variable: '--font-fraunces',
+  display: 'swap',
+});
+
+const archivo = Archivo({
+  subsets: ['latin'],
+  axes: ['wdth'],
+  variable: '--font-archivo',
+  display: 'swap',
+});
+
+const geistMono = Geist_Mono({
+  subsets: ['latin'],
+  variable: '--font-geist-mono',
+  display: 'swap',
+});
+
 export const metadata: Metadata = {
-  title: 'SIGNAL BOX // LEVERFRAME — 1856 Mechanical Interlocking & Kiro PBT Exorcist',
+  title: 'Signal Box // LeverFrame — 1856 mechanical interlocking for parallel AI agents',
   description:
-    'Victorian brass mechanical railway interlocking frame, step-by-step fast-check property-based counterexample shrinking, and Kiro Crew MCP coordination.',
+    'A Victorian brass lever frame and tappet locking bed that refuse conflicting moves, an EARS rule table from the Kiro spec, and a fast-check PBT exorcist that shrinks a collision to a three-step replay.',
+};
+
+export const viewport: Viewport = {
+  themeColor: '#0B0F0D',
 };
 
 interface RootLayoutProps {
@@ -13,19 +41,8 @@ interface RootLayoutProps {
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="en">
-      <body
-        style={{
-          margin: 0,
-          padding: 0,
-          backgroundColor: '#0c0b09',
-          color: '#ede3ce',
-          fontFamily:
-            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-        }}
-      >
-        {children}
-      </body>
+    <html lang="en" className={`${fraunces.variable} ${archivo.variable} ${geistMono.variable}`}>
+      <body>{children}</body>
     </html>
   );
 }

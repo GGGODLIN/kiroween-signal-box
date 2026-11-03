@@ -1,8 +1,9 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 
-import type { LeverId, PresetId, RouteId } from '../lib/interlocking.ts';
+import type { FrameState, LeverId, PresetId, RouteId } from '../lib/interlocking.ts';
+import type { CounterexampleReplayBundle, ExorcismReport, PbtTrialReceipt } from '../lib/pbt-exorcist.ts';
 import {
   createSignalBoxStore,
   executeSignalBoxMcpTool,
@@ -12,1235 +13,868 @@ import {
   type SoundCue,
 } from '../lib/signal-box-store.ts';
 
-interface LeverDescriptor {
-  leverId: LeverId;
-  title: string;
-  roleLabel: string;
-  badgeColor: string;
-}
+import { LeverFrame, type LeverJerk } from './_components/lever-frame.tsx';
+import {
+  LEVER_IDS,
+  RULE_TITLES,
+  SPEC_SOURCE,
+  actionCode,
+  leverDescriptor,
+  lockedLevers,
+  missingRuleIds,
+  weakenedRuleIds,
+} from './_components/machine.ts';
+import { TrackDiagram } from './_components/track-diagram.tsx';
 
-const LEVER_DESCRIPTORS: readonly LeverDescriptor[] = [
-  {
-    leverId: 1,
-    title: 'North Up Home',
-    roleLabel: 'SIGNAL // BUILDER',
-    badgeColor: '#dc2626',
-  },
-  {
-    leverId: 2,
-    title: 'Junction Crossover',
-    roleLabel: 'POINT SWITCH',
-    badgeColor: '#52525b',
-  },
-  {
-    leverId: 3,
-    title: 'Facing Point Lock',
-    roleLabel: 'FPL PLUNGER',
-    badgeColor: '#2563eb',
-  },
-  {
-    leverId: 4,
-    title: 'South Branch Home',
-    roleLabel: 'SIGNAL // MIGRATOR',
-    badgeColor: '#dc2626',
-  },
-  {
-    leverId: 5,
-    title: 'Bridge Distant',
-    roleLabel: 'SIGNAL // DEPLOYER',
-    badgeColor: '#d97706',
-  },
-  {
-    leverId: 6,
-    title: 'Audit Siding Dwarf',
-    roleLabel: 'SIGNAL // VERIFIER',
-    badgeColor: '#dc2626',
-  },
-  {
-    leverId: 7,
-    title: 'Bridge Token',
-    roleLabel: 'CLEARANCE LOCK',
-    badgeColor: '#b45309',
-  },
-  {
-    leverId: 8,
-    title: 'Maintenance Isolator',
-    roleLabel: 'ISOLATION KEY',
-    badgeColor: '#7c2d12',
-  },
-];
+// ─────────────────────────────── Kiro Crew: one agent train per signalled route ───────────────────────────────
 
-interface AgentRouteCardSpec {
+type CrewAgent = 'Builder' | 'Migrator' | 'Deployer' | 'Verifier';
+
+interface AgentRouteSpec {
   routeId: RouteId;
-  agentId: 'Builder' | 'Migrator' | 'Deployer' | 'Verifier';
-  corridorLabel: string;
-  signalLever: LeverId;
+  agentId: CrewAgent;
 }
 
-const AGENT_ROUTE_SPECS: readonly AgentRouteCardSpec[] = [
-  {
-    routeId: 'NORTH_TO_BRIDGE',
-    agentId: 'Builder',
-    corridorLabel: 'North Up Main -> Throat -> Schema Bridge',
-    signalLever: 1,
-  },
-  {
-    routeId: 'SOUTH_TO_BRIDGE',
-    agentId: 'Migrator',
-    corridorLabel: 'South Branch -> Crossover #2 -> Schema Bridge',
-    signalLever: 4,
-  },
-  {
-    routeId: 'BRIDGE_MAINLINE',
-    agentId: 'Deployer',
-    corridorLabel: 'Schema Bridge -> Prod Mainline (Token #7)',
-    signalLever: 5,
-  },
-  {
-    routeId: 'AUDIT_SIDING',
-    agentId: 'Verifier',
-    corridorLabel: 'Junction Throat -> Audit Siding (Isolator #8)',
-    signalLever: 6,
-  },
+const AGENT_ROUTE_SPECS: readonly AgentRouteSpec[] = [
+  { routeId: 'NORTH_TO_BRIDGE', agentId: 'Builder' },
+  { routeId: 'SOUTH_TO_BRIDGE', agentId: 'Migrator' },
+  { routeId: 'BRIDGE_MAINLINE', agentId: 'Deployer' },
+  { routeId: 'AUDIT_SIDING', agentId: 'Verifier' },
 ];
+
+const PRESETS: ReadonlyArray<{ presetId: PresetId; tone: 'green' | 'red' }> = [
+  { presetId: 'STANDARD_SAFE', tone: 'green' },
+  { presetId: 'CURSED_MISSING_CROSSOVER_LOCK', tone: 'red' },
+];
+
+// ─────────────────────────────── WebAudio: the box's own sounds, synthesised on demand ───────────────────────────────
 
 let sharedAudioContext: AudioContext | null = null;
+let sharedMaster: GainNode | null = null;
+let sharedNoise: AudioBuffer | null = null;
+
+function audioGraph(): { ctx: AudioContext; master: GainNode; noise: AudioBuffer } | null {
+  if (typeof window === 'undefined' || !('AudioContext' in window)) {
+    return null;
+  }
+  if (!sharedAudioContext || sharedAudioContext.state === 'closed') {
+    sharedAudioContext = new window.AudioContext();
+    sharedMaster = sharedAudioContext.createGain();
+    sharedMaster.gain.value = 0.8;
+    sharedMaster.connect(sharedAudioContext.destination);
+    const length = Math.floor(sharedAudioContext.sampleRate * 0.4);
+    sharedNoise = sharedAudioContext.createBuffer(1, length, sharedAudioContext.sampleRate);
+    const data = sharedNoise.getChannelData(0);
+    // a fixed LCG instead of Math.random so every clack is the same clack
+    let seed = 1856;
+    for (let i = 0; i < length; i++) {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      data[i] = (seed / 4294967296) * 2 - 1;
+    }
+  }
+  if (sharedAudioContext.state === 'suspended') {
+    void sharedAudioContext.resume();
+  }
+  return { ctx: sharedAudioContext, master: sharedMaster!, noise: sharedNoise! };
+}
+
+function partial(ctx: AudioContext, out: AudioNode, freq: number, t0: number, dur: number, level: number, type: OscillatorType = 'sine'): void {
+  const osc = ctx.createOscillator();
+  const env = ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t0);
+  env.gain.setValueAtTime(0.0001, t0);
+  env.gain.exponentialRampToValueAtTime(level, t0 + 0.004);
+  env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(env).connect(out);
+  osc.onended = () => {
+    osc.disconnect();
+    env.disconnect();
+  };
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.02);
+}
+
+function burst(ctx: AudioContext, out: AudioNode, noise: AudioBuffer, t0: number, dur: number, freq: number, q: number, level: number): void {
+  const src = ctx.createBufferSource();
+  const band = ctx.createBiquadFilter();
+  const env = ctx.createGain();
+  src.buffer = noise;
+  band.type = 'bandpass';
+  band.frequency.value = freq;
+  band.Q.value = q;
+  env.gain.setValueAtTime(level, t0);
+  env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  src.connect(band).connect(env).connect(out);
+  src.onended = () => {
+    src.disconnect();
+    band.disconnect();
+    env.disconnect();
+  };
+  src.start(t0);
+  src.stop(t0 + dur + 0.02);
+}
 
 function playMechanicalSound(cue: SoundCue, muted: boolean): void {
-  if (
-    muted ||
-    cue === 'NONE' ||
-    typeof window === 'undefined' ||
-    !('AudioContext' in window)
-  ) {
+  if (muted || cue === 'NONE') {
     return;
   }
-
   try {
-    if (!sharedAudioContext || sharedAudioContext.state === 'closed') {
-      const AudioCtx = window.AudioContext;
-      sharedAudioContext = new AudioCtx();
+    const graph = audioGraph();
+    if (graph === null) {
+      return;
     }
-    const ctx = sharedAudioContext;
-    if (ctx.state === 'suspended') {
-      void ctx.resume();
-    }
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.onended = () => {
-      osc.disconnect();
-      gain.disconnect();
-    };
-
+    const { ctx, master, noise } = graph;
+    const now = ctx.currentTime + 0.005;
     if (cue === 'LEVER_LATCH') {
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(190, now);
-      osc.frequency.exponentialRampToValueAtTime(340, now + 0.09);
-      gain.gain.setValueAtTime(0.14, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
-      osc.start(now);
-      osc.stop(now + 0.12);
+      // the catch drops into the quadrant notch: a dry clack over a short iron thump
+      burst(ctx, master, noise, now, 0.04, 2600, 5, 0.55);
+      partial(ctx, master, 140, now, 0.11, 0.24, 'triangle');
+      burst(ctx, master, noise, now + 0.055, 0.03, 1700, 6, 0.28);
     } else if (cue === 'INTERLOCK_CLANK') {
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(110, now);
-      osc.frequency.linearRampToValueAtTime(68, now + 0.16);
-      gain.gain.setValueAtTime(0.18, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
-      osc.start(now);
-      osc.stop(now + 0.19);
+      // iron meeting a brass dog: inharmonic partials and a dull knock
+      [311, 742, 1306, 2017].forEach((f, i) => partial(ctx, master, f, now, 0.3 - i * 0.05, 0.2 / (i + 1)));
+      burst(ctx, master, noise, now, 0.07, 820, 2.5, 0.6);
     } else if (cue === 'COLLISION_ALARM') {
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(520, now);
-      osc.frequency.setValueAtTime(390, now + 0.12);
-      gain.gain.setValueAtTime(0.2, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
-      osc.start(now);
-      osc.stop(now + 0.29);
+      // the block bell struck twice, hard
+      for (const offset of [0, 0.22]) {
+        [880, 1863, 2650].forEach((f, i) => partial(ctx, master, f, now + offset, 0.7, 0.16 / (i + 1)));
+      }
+      burst(ctx, master, noise, now, 0.12, 300, 1.2, 0.35);
     } else {
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, now);
-      osc.frequency.exponentialRampToValueAtTime(660, now + 0.2);
-      gain.gain.setValueAtTime(0.12, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
-      osc.start(now);
-      osc.stop(now + 0.23);
+      // BELL_CHIME: one stroke on the block bell
+      [1046, 2214, 3150].forEach((f, i) => partial(ctx, master, f, now, 1.1, 0.1 / (i + 1)));
     }
   } catch {
-    // WebAudio synthesis is best-effort in browsers that block autoplay prior to gesture
+    // browsers may refuse audio before the first gesture; the box still works silently
   }
 }
 
-function getBlockStrokeColor(
-  blockId: string,
-  occupiedBlocks: readonly string[],
-  collisionBlocks: readonly string[],
-): string {
-  if (collisionBlocks.includes(blockId)) {
-    return '#ef4444';
-  }
-  if (occupiedBlocks.includes(blockId)) {
-    return '#10b981';
-  }
-  return '#57534e';
+// ─────────────────────────────── what the register says about the last move ───────────────────────────────
+
+type DeskEvent =
+  | { kind: 'boot' }
+  | { kind: 'lever'; leverId: LeverId; intent: 'PULL' | 'RELEASE'; before: SignalBoxStoreState }
+  | { kind: 'mcp'; response: SignalBoxMcpResponse; toolName: 'request_route' | 'release_route'; agentId: CrewAgent; routeId: RouteId; before: SignalBoxStoreState }
+  | { kind: 'preset'; presetId: PresetId }
+  | { kind: 'exorcism' }
+  | { kind: 'replay' };
+
+type Tone = 'idle' | 'green' | 'red' | 'brass';
+
+interface RegisterView {
+  tone: Tone;
+  headline: string;
+  code: boolean;
+  sub: string;
+  clause: string | null;
+  source: string | null;
 }
+
+const listLevers = (ids: readonly LeverId[]): string => ids.map((id) => `#${id}`).join(' · ');
+
+function lockDiff(before: SignalBoxStoreState, after: SignalBoxStoreState): string {
+  const was = lockedLevers(before.frame.levers, before.tappetBars);
+  const now = lockedLevers(after.frame.levers, after.tappetBars);
+  const locks = now.filter((id) => !was.includes(id));
+  const frees = was.filter((id) => !now.includes(id));
+  return [locks.length > 0 ? `Locks ${listLevers(locks)}.` : '', frees.length > 0 ? `Frees ${listLevers(frees)}.` : '']
+    .filter(Boolean)
+    .join(' ');
+}
+
+function routeDiff(before: FrameState, after: FrameState): string {
+  const was = before.activeRoutes.map((route) => route.routeId);
+  const set = after.activeRoutes.filter((route) => !was.includes(route.routeId));
+  const cancelled = before.activeRoutes.filter(
+    (route) => !after.activeRoutes.some((r) => r.routeId === route.routeId),
+  );
+  return [
+    ...set.map((route) => `Route set: ${route.routeId} — ${route.agentTrain} holds ${route.occupiedBlocks.join(' → ')}.`),
+    ...cancelled.map((route) => `Route cancelled: ${route.routeId}.`),
+  ].join(' ');
+}
+
+function blockedView(state: SignalBoxStoreState, prefix: string): RegisterView {
+  const ruleId = state.frame.blockingRuleId ?? 'EARS-ILK-??';
+  return {
+    tone: 'red',
+    headline: `${prefix} ${ruleId}`,
+    code: true,
+    sub: state.frame.blockingReason ?? '',
+    clause: state.frame.blockingEarsClause,
+    source: RULE_TITLES[ruleId] ?? null,
+  };
+}
+
+function describeRegister(state: SignalBoxStoreState, event: DeskEvent): RegisterView {
+  const { frame, topology } = state;
+
+  if (!topology.safe) {
+    const where =
+      topology.collisionBlocks.length > 0
+        ? topology.collisionBlocks.join(' × ')
+        : `signal #${topology.misalignedSignals.join(', #')}`;
+    return {
+      tone: 'red',
+      headline: topology.collisionBlocks.length > 0 ? `Collision on ${where}` : `Lock violation at ${where}`,
+      code: false,
+      sub: topology.details,
+      clause: `${topology.violatedProperty} · the rule that should have stopped it: ${topology.missingRuleId}`,
+      source: topology.missingRuleId ? (RULE_TITLES[topology.missingRuleId] ?? null) : null,
+    };
+  }
+
+  if (event.kind === 'mcp') {
+    const { response, toolName, agentId, routeId } = event;
+    const call = `MCP ${toolName} · ${agentId} → ${routeId}.`;
+    if (response.isError) {
+      return { tone: 'red', headline: `MCP error · ${response.errorCode}`, code: true, sub: response.errorMessage, clause: null, source: null };
+    }
+    if (response.toolName === 'request_route' && !response.granted) {
+      const view = blockedView(state, 'Refused by');
+      return { ...view, sub: `${call} ${view.sub} No lever moved.` };
+    }
+    const thrown = frame.stepHistory
+      .slice(event.before.frame.stepHistory.length)
+      .filter((step) => step.outcome === 'APPLIED')
+      .map((step) => actionCode(step.action.leverId, step.action.intent));
+    return {
+      tone: toolName === 'request_route' ? 'green' : 'brass',
+      headline: toolName === 'request_route' ? `Route granted · ${routeId}` : `Route released · ${routeId}`,
+      code: false,
+      sub: `${call} ${thrown.length > 0 ? `The agent threw ${thrown.join(' · ')}.` : 'No lever needed to move.'} ${lockDiff(event.before, state)}`.trim(),
+      clause: null,
+      source: null,
+    };
+  }
+
+  if (frame.lastOutcome === 'BLOCKED_BY_INTERLOCK') {
+    return blockedView(state, 'Blocked by');
+  }
+
+  if (event.kind === 'lever') {
+    const lever = leverDescriptor(event.leverId);
+    const moved = event.intent === 'PULL' ? 'pulled' : 'put back';
+    const routes = routeDiff(event.before.frame, frame);
+    return {
+      tone: routes.startsWith('Route set') ? 'green' : 'brass',
+      headline: `#${lever.leverId} ${lever.name} ${moved}`,
+      code: false,
+      sub: [routes, lockDiff(event.before, state)].filter(Boolean).join(' ') || 'Nothing else in the frame changed.',
+      clause: null,
+      source: null,
+    };
+  }
+
+  if (event.kind === 'preset') {
+    const missing = missingRuleIds(event.presetId);
+    const weakened = weakenedRuleIds(event.presetId);
+    return missing.length === 0 && weakened.length === 0
+      ? {
+          tone: 'green',
+          headline: `Rule table · ${event.presetId}`,
+          code: false,
+          sub: 'All eight EARS rules are back in the locking bed.',
+          clause: null,
+          source: null,
+        }
+      : {
+          tone: 'red',
+          headline: `Rule table · ${event.presetId}`,
+          code: false,
+          sub: `${missing.join(', ')} is missing${weakened.length > 0 ? ` and ${weakened.join(', ')} is weakened` : ''}. The frame still feels solid — so let the exorcist look for what this breaks.`,
+          clause: null,
+          source: null,
+        };
+  }
+
+  if (event.kind === 'exorcism' && state.exorcismReport !== null) {
+    const report = state.exorcismReport;
+    const bundle = state.replayBundle;
+    return report.passed || bundle === null
+      ? {
+          tone: 'green',
+          headline: 'Exorcism passed',
+          code: false,
+          sub: `${report.numRunsExecuted} random runs · ${report.stepwiseAssertionsChecked} stepwise checks · 0 violations on ${report.presetId}.`,
+          clause: null,
+          source: null,
+        }
+      : {
+          tone: 'red',
+          headline: `Counterexample · ${bundle.originalLength} → ${bundle.shrunkActions.length} steps`,
+          code: false,
+          sub: `fast-check caught ${bundle.violatedProperty} on run ${report.numRunsExecuted} and shrank it to ${bundle.shrunkActions
+            .map((a) => actionCode(a.leverId, a.intent))
+            .join(' · ')}. Step the replay to watch it happen.`,
+          clause: null,
+          source: null,
+        };
+  }
+
+  if (event.kind === 'replay' && state.replayBundle !== null && state.replayCursor !== null) {
+    const action = state.replayBundle.shrunkActions[state.replayCursor];
+    const lever = leverDescriptor(action.leverId);
+    return {
+      tone: 'brass',
+      headline: `Replay ${state.replayCursor + 1} of ${state.replayBundle.shrunkActions.length} · ${actionCode(action.leverId, action.intent)}`,
+      code: false,
+      sub: `#${lever.leverId} ${lever.name} ${action.intent === 'PULL' ? 'pulled' : 'put back'} — the cursed table lets it through.`,
+      clause: null,
+      source: null,
+    };
+  }
+
+  return {
+    tone: 'idle',
+    headline: 'All eight levers stand at normal.',
+    code: false,
+    sub: 'Every signal shows danger. Pull #3 to lock the facing points, then #1 to clear Builder onto the schema bridge.',
+    clause: null,
+    source: null,
+  };
+}
+
+function nextHint(state: SignalBoxStoreState): string | null {
+  const { frame, replayBundle, replayCursor, exorcismReport } = state;
+  if (replayBundle !== null) {
+    const last = replayBundle.shrunkActions.length - 1;
+    return replayCursor === null || replayCursor < last ? 'Step the replay forward' : 'Switch back to STANDARD_SAFE';
+  }
+  if (frame.presetId === 'CURSED_MISSING_CROSSOVER_LOCK') {
+    return exorcismReport === null ? 'Run the PBT exorcist' : null;
+  }
+  if (frame.lastOutcome === 'BLOCKED_BY_INTERLOCK' && frame.blockingRuleId === 'EARS-ILK-01') {
+    return 'Try the cursed rule table';
+  }
+  if (frame.levers[1] === 'REVERSE' && frame.levers[3] === 'REVERSE' && frame.levers[4] === 'NORMAL') {
+    return 'Now try #4 — Migrator wants the bridge';
+  }
+  if (LEVER_IDS.every((id) => frame.levers[id] === 'NORMAL') && exorcismReport === null) {
+    return 'Pull #3, then #1';
+  }
+  return null;
+}
+
+// ─────────────────────────────── page ───────────────────────────────
+
+interface DeskView {
+  snapshot: SignalBoxStoreState;
+  event: DeskEvent;
+  jerk: LeverJerk | null;
+  moveDelays: Partial<Record<LeverId, number>>;
+}
+
+const STAGGER_MS = 190;
 
 export default function SignalBoxPage() {
   const storeRef = useRef<SignalBoxStore | null>(null);
   if (storeRef.current === null) {
     storeRef.current = createSignalBoxStore('STANDARD_SAFE');
   }
+  const nonceRef = useRef(0);
 
-  const [snapshot, setSnapshot] = useState<SignalBoxStoreState>(() =>
-    storeRef.current!.getState(),
+  const [view, setView] = useState<DeskView>(() => ({
+    snapshot: storeRef.current!.getState(),
+    event: { kind: 'boot' },
+    jerk: null,
+    moveDelays: {},
+  }));
+
+  const commit = useCallback((before: SignalBoxStoreState, next: SignalBoxStoreState, event: DeskEvent, sound = true): void => {
+    const fresh = next.frame.stepHistory.slice(before.frame.stepHistory.length);
+    const moveDelays: Partial<Record<LeverId, number>> = {};
+    fresh
+      .filter((step) => step.outcome === 'APPLIED')
+      .forEach((step, index) => {
+        moveDelays[step.action.leverId] = index * STAGGER_MS;
+      });
+    // only a refusal this action produced may jerk a lever; a stale BLOCKED frame (e.g. after a mute toggle) must not
+    const refused = fresh.length > 0 ? fresh[fresh.length - 1] : null;
+    let jerk: LeverJerk | null = null;
+    if (refused !== null && refused.outcome === 'BLOCKED_BY_INTERLOCK') {
+      nonceRef.current += 1;
+      jerk = { leverId: refused.action.leverId, intent: refused.action.intent, nonce: nonceRef.current };
+    }
+    setView({ snapshot: next, event, jerk, moveDelays });
+    if (sound) {
+      playMechanicalSound(next.lastSoundCue, next.audioMuted);
+    }
+  }, []);
+
+  const toggleLever = useCallback(
+    (leverId: LeverId): void => {
+      const store = storeRef.current!;
+      const before = store.getState();
+      const intent = before.frame.levers[leverId] === 'NORMAL' ? 'PULL' : 'RELEASE';
+      const next = intent === 'PULL' ? store.pullLever(leverId) : store.releaseLever(leverId);
+      commit(before, next, { kind: 'lever', leverId, intent, before });
+    },
+    [commit],
   );
-  const [lastMcpResponse, setLastMcpResponse] =
-    useState<SignalBoxMcpResponse | null>(null);
-
-  const commitStoreUpdate = (next: SignalBoxStoreState): void => {
-    setSnapshot({ ...next });
-    playMechanicalSound(next.lastSoundCue, next.audioMuted);
-  };
-
-  const handlePullLever = (leverId: LeverId): void => {
-    const next = storeRef.current!.pullLever(leverId);
-    commitStoreUpdate(next);
-  };
-
-  const handleReleaseLever = (leverId: LeverId): void => {
-    const next = storeRef.current!.releaseLever(leverId);
-    commitStoreUpdate(next);
-  };
 
   const handleSwitchPreset = (presetId: PresetId): void => {
-    const next = storeRef.current!.switchPreset(presetId);
-    setLastMcpResponse(null);
-    commitStoreUpdate(next);
+    const store = storeRef.current!;
+    const before = store.getState();
+    commit(before, store.switchPreset(presetId), { kind: 'preset', presetId });
   };
 
   const handleToggleAudioMute = (): void => {
-    const next = storeRef.current!.toggleAudioMute();
-    setSnapshot({ ...next });
+    const store = storeRef.current!;
+    const before = store.getState();
+    const next = store.toggleAudioMute();
+    commit(before, next, view.event, false);
+    if (!next.audioMuted) {
+      playMechanicalSound('BELL_CHIME', false);
+    }
   };
 
   const handleRunExorcism = (): void => {
-    const next = storeRef.current!.runExorcism();
-    commitStoreUpdate(next);
+    const store = storeRef.current!;
+    const before = store.getState();
+    commit(before, store.runExorcism(), { kind: 'exorcism' });
   };
 
   const handleStepReplayForward = (): void => {
-    const next = storeRef.current!.stepReplayForward();
-    commitStoreUpdate(next);
+    const store = storeRef.current!;
+    const before = store.getState();
+    commit(before, store.stepReplayForward(), { kind: 'replay' });
   };
 
-  const handleMcpRouteAction = (
-    toolName: 'request_route' | 'release_route',
-    agentId: string,
-    routeId: RouteId,
-  ): void => {
-    const res = executeSignalBoxMcpTool(storeRef.current!, {
-      toolName,
-      agentId,
-      routeId,
-    });
-    setLastMcpResponse(res);
-    const next = storeRef.current!.getState();
-    commitStoreUpdate(next);
+  const handleMcpRouteAction = (toolName: 'request_route' | 'release_route', agentId: CrewAgent, routeId: RouteId): void => {
+    const store = storeRef.current!;
+    const before = store.getState();
+    const response = executeSignalBoxMcpTool(store, { toolName, agentId, routeId });
+    commit(before, store.getState(), { kind: 'mcp', response, toolName, agentId, routeId, before });
   };
 
-  const {
-    frame,
-    topology,
-    tappetBars,
-    audioMuted,
-    exorcismReport,
-    trialReceipt,
-    replayBundle,
-    replayCursor,
-    collisionBanner,
-  } = snapshot;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) {
+        return;
+      }
+      const digit = Number(event.key);
+      if (Number.isInteger(digit) && digit >= 1 && digit <= 8) {
+        event.preventDefault();
+        toggleLever(digit as LeverId);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggleLever]);
+
+  const { snapshot, event, jerk, moveDelays } = view;
+  const { frame, topology, tappetBars, audioMuted, exorcismReport, trialReceipt, replayBundle, replayCursor } = snapshot;
+  const register = describeRegister(snapshot, event);
+  const hint = nextHint(snapshot);
+  const recent = frame.stepHistory.slice(-10);
 
   return (
-    <main
-      style={{
-        minHeight: '100vh',
-        backgroundColor: '#0c0b09',
-        color: '#ede3ce',
-        padding: '20px 24px 40px',
-      }}
-    >
-      {/* Top Victorian Brass Header Bar */}
-      <header
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: '16px',
-          padding: '16px 20px',
-          backgroundColor: '#171411',
-          border: '1px solid #85683a',
-          borderRadius: '6px',
-          marginBottom: '18px',
-        }}
-      >
-        <div>
-          <div
-            style={{
-              fontSize: '11px',
-              letterSpacing: '0.16em',
-              color: '#d4af37',
-              textTransform: 'uppercase',
-            }}
-          >
-            SAXBY & FARMER 1856 TAPPET INTERLOCKING // KIRO FORMAL PBT HARNESS
-          </div>
-          <h1
-            style={{
-              margin: '4px 0 0',
-              fontSize: '20px',
-              fontWeight: 700,
-              color: '#fef3c7',
-            }}
-          >
-            SIGNAL BOX // LEVERFRAME
+    <main className="sb" data-preset={frame.presetId}>
+      <div className="sb-grid">
+        <header className="sb-head">
+          <p className="mh-eyebrow caps">Saxby &amp; Farmer · 1856 · Tappet interlocking</p>
+          <h1 className="mh-title">
+            <span className="mh-wordmark display">Signal Box</span>
+            <span className="mh-frame caps">// LeverFrame</span>
           </h1>
-        </div>
-
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            gap: '10px',
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => handleSwitchPreset('STANDARD_SAFE')}
-            style={{
-              padding: '8px 12px',
-              borderRadius: '4px',
-              border:
-                frame.presetId === 'STANDARD_SAFE'
-                  ? '2px solid #10b981'
-                  : '1px solid #57534e',
-              backgroundColor:
-                frame.presetId === 'STANDARD_SAFE' ? '#064e3b' : '#1c1917',
-              color: '#ecfdf5',
-              fontWeight: 600,
-              fontSize: '12px',
-              cursor: 'pointer',
-            }}
-          >
-            PRESET: STANDARD_SAFE
-          </button>
-
-          <button
-            type="button"
-            onClick={() =>
-              handleSwitchPreset('CURSED_MISSING_CROSSOVER_LOCK')
-            }
-            style={{
-              padding: '8px 12px',
-              borderRadius: '4px',
-              border:
-                frame.presetId === 'CURSED_MISSING_CROSSOVER_LOCK'
-                  ? '2px solid #ef4444'
-                  : '1px solid #57534e',
-              backgroundColor:
-                frame.presetId === 'CURSED_MISSING_CROSSOVER_LOCK'
-                  ? '#7f1d1d'
-                  : '#1c1917',
-              color: '#fef2f2',
-              fontWeight: 600,
-              fontSize: '12px',
-              cursor: 'pointer',
-            }}
-          >
-            PRESET: CURSED_MISSING_CROSSOVER_LOCK
-          </button>
-
-          <button
-            type="button"
-            onClick={handleToggleAudioMute}
-            style={{
-              padding: '8px 12px',
-              borderRadius: '4px',
-              border: '1px solid #85683a',
-              backgroundColor: '#262118',
-              color: '#fde68a',
-              fontSize: '12px',
-              cursor: 'pointer',
-            }}
-          >
-            {audioMuted ? 'AUDIO: MUTED' : 'AUDIO: WEBAUDIO SYNTH'}
-          </button>
-
-          <button
-            type="button"
-            onClick={handleRunExorcism}
-            style={{
-              padding: '8px 14px',
-              borderRadius: '4px',
-              border: '1px solid #f59e0b',
-              backgroundColor: '#b45309',
-              color: '#fffbeb',
-              fontWeight: 700,
-              fontSize: '12px',
-              cursor: 'pointer',
-            }}
-          >
-            RUN PBT EXORCIST (fast-check)
-          </button>
-        </div>
-      </header>
-
-      {/* Active Collision Banner or Mechanical Interlock Block Banner */}
-      {collisionBanner !== null && (
-        <section
-          role="alert"
-          style={{
-            padding: '12px 16px',
-            marginBottom: '16px',
-            backgroundColor: '#450a0a',
-            border: '2px solid #ef4444',
-            borderRadius: '6px',
-            color: '#fecaca',
-          }}
-        >
-          <strong>
-            PHYSICAL TOPOLOGY VIOLATION ({topology.violatedProperty}) — MISSING{' '}
-            {topology.missingRuleId}:
-          </strong>{' '}
-          {collisionBanner}
-        </section>
-      )}
-
-      {frame.lastOutcome === 'BLOCKED_BY_INTERLOCK' && (
-        <section
-          role="status"
-          style={{
-            padding: '12px 16px',
-            marginBottom: '16px',
-            backgroundColor: '#291d0e',
-            border: '1px solid #f59e0b',
-            borderRadius: '6px',
-            color: '#fde68a',
-          }}
-        >
-          <div>
-            <strong>
-              MECHANICAL TAPPET LOCK ENGAGED [{frame.blockingRuleId}]:
-            </strong>{' '}
-            {frame.blockingReason}
+          <p className="mh-tagline">Mechanical interlocking, resurrected for parallel AI agents.</p>
+          <div className="mh-controls">
+            <div className="mh-field">
+              <span className="mh-label caps" id="rule-table-label">
+                Rule table
+              </span>
+              <div className="switch" role="radiogroup" aria-labelledby="rule-table-label">
+                {PRESETS.map(({ presetId, tone }) => (
+                  <button
+                    key={presetId}
+                    type="button"
+                    role="radio"
+                    aria-checked={frame.presetId === presetId}
+                    data-tone={tone}
+                    className="switch-opt"
+                    onClick={() => handleSwitchPreset(presetId)}
+                  >
+                    <span className="lamp" data-tone={frame.presetId === presetId ? tone : undefined} />
+                    {presetId}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button type="button" className="sound caps" aria-pressed={!audioMuted} onClick={handleToggleAudioMute}>
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M8 2.2c-2.4 0-4 1.9-4 4.4v3.1L2.6 11.6h10.8L12 9.7V6.6C12 4.1 10.4 2.2 8 2.2Z" fill="none" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M6.5 13.2a1.6 1.6 0 0 0 3 0" fill="none" stroke="currentColor" strokeWidth="1.3" />
+                {audioMuted && <path d="M2.5 2.5l11 11" stroke="currentColor" strokeWidth="1.3" />}
+              </svg>
+              {audioMuted ? 'Sound off' : 'Sound on'}
+            </button>
           </div>
-          <div style={{ fontSize: '12px', marginTop: '4px', color: '#fcd34d' }}>
-            EARS Spec: {frame.blockingEarsClause}
-          </div>
-        </section>
-      )}
+        </header>
 
-      {/* Illuminated Track Diagram & Kiro Crew Agent Trains */}
-      <section
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '2fr 1fr',
-          gap: '16px',
-          marginBottom: '18px',
-        }}
-      >
-        <div
-          style={{
-            backgroundColor: '#14120f',
-            border: '1px solid #57462b',
-            borderRadius: '6px',
-            padding: '16px',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '10px',
-            }}
-          >
-            <h2 style={{ margin: 0, fontSize: '14px', color: '#fcd34d' }}>
-              ILLUMINATED TRACK DIAGRAM & JUNCTION TOPOLOGY ORACLE
-            </h2>
-            <span
-              style={{
-                fontSize: '12px',
-                padding: '3px 8px',
-                borderRadius: '4px',
-                backgroundColor: topology.safe ? '#064e3b' : '#7f1d1d',
-                color: topology.safe ? '#6ee7b7' : '#fca5a5',
-                fontWeight: 700,
-              }}
-            >
-              {topology.safe
-                ? 'ORACLE: P1 & P2 INVARIANTS HOLD'
-                : topology.collisionBlocks.length > 0
-                  ? `COLLISION: ${topology.collisionBlocks.join(', ')}`
-                  : `LOCK VIOLATION: SIGNAL #${topology.misalignedSignals.join(', #')}`}
+        <section className="sb-machine" aria-label="The signal box">
+          <div className={topology.safe ? 'board' : 'board is-alarm'}>
+            <div className="board-head">
+              <h2 className="board-title caps">Illuminated diagram</h2>
+              <span className="oracle caps" data-tone={topology.safe ? undefined : 'red'}>
+                <span className="lamp" data-tone={topology.safe ? 'green' : 'red'} />
+                {topology.safe
+                  ? 'Topology oracle · P1 · P2 hold'
+                  : topology.collisionBlocks.length > 0
+                    ? `Collision · ${topology.collisionBlocks.join(' × ')}`
+                    : `Lock violation · signal #${topology.misalignedSignals.join(', #')}`}
+              </span>
+            </div>
+            <TrackDiagram frame={frame} topology={topology} />
+            <div className="crew" role="group" aria-label="Kiro Crew agents over MCP">
+              {AGENT_ROUTE_SPECS.map((spec) => {
+                const route = frame.activeRoutes.find((r) => r.routeId === spec.routeId);
+                const hot = route !== undefined && route.occupiedBlocks.some((b) => topology.collisionBlocks.includes(b));
+                const tone = hot ? 'red' : route ? 'green' : undefined;
+                return (
+                  <div key={spec.routeId} className="crew-key">
+                    <div className="crew-name display">
+                      <span className="lamp" data-tone={tone} />
+                      {spec.agentId}
+                      <span className="crew-state caps" data-tone={tone}>
+                        {hot ? 'Colliding' : route ? 'Holds route' : 'Waiting'}
+                      </span>
+                    </div>
+                    <span className="crew-route mono">{spec.routeId}</span>
+                    <div className="crew-actions">
+                      <button
+                        type="button"
+                        className="crew-btn"
+                        aria-label={`${spec.agentId}: MCP request_route ${spec.routeId}`}
+                        onClick={() => handleMcpRouteAction('request_route', spec.agentId, spec.routeId)}
+                      >
+                        request_route
+                      </button>
+                      <button
+                        type="button"
+                        className="crew-btn is-ghost"
+                        aria-label={`${spec.agentId}: MCP release_route ${spec.routeId}`}
+                        onClick={() => handleMcpRouteAction('release_route', spec.agentId, spec.routeId)}
+                      >
+                        release
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="frame-wrap">
+            <LeverFrame frame={frame} tappetBars={tappetBars} jerk={jerk} moveDelays={moveDelays} onToggle={toggleLever} />
+          </div>
+          <div className="frame-foot caps">
+            <span>
+              Throw a lever: click it, or press <span className="kbd">1</span>–<span className="kbd">8</span>
             </span>
+            <span>Red stop · yellow distant · black points · blue facing lock · brown clearance</span>
           </div>
+        </section>
 
-          <svg
-            viewBox="0 0 760 220"
-            style={{
-              width: '100%',
-              height: 'auto',
-              backgroundColor: '#090807',
-              border: '1px solid #3f3422',
-              borderRadius: '4px',
-            }}
-          >
-            {/* North Approach Block */}
-            <line
-              x1="30"
-              y1="65"
-              x2="230"
-              y2="65"
-              stroke={getBlockStrokeColor(
-                'north-approach',
-                frame.occupiedBlocks,
-                topology.collisionBlocks,
-              )}
-              strokeWidth="8"
-            />
-            <text x="35" y="45" fill="#d6d3d1" fontSize="11">
-              north-approach (Signal #1 // Builder)
-            </text>
-
-            {/* South Branch Block */}
-            <line
-              x1="30"
-              y1="155"
-              x2="180"
-              y2="155"
-              stroke={getBlockStrokeColor(
-                'south-branch',
-                frame.occupiedBlocks,
-                topology.collisionBlocks,
-              )}
-              strokeWidth="8"
-            />
-            <text x="35" y="182" fill="#d6d3d1" fontSize="11">
-              south-branch (Signal #4 // Migrator)
-            </text>
-
-            {/* Crossover Point #2 & FPL #3 */}
-            <line
-              x1="180"
-              y1="155"
-              x2="245"
-              y2="65"
-              stroke={
-                frame.levers[2] === 'REVERSE' ? '#f59e0b' : '#44403c'
-              }
-              strokeWidth="6"
-              strokeDasharray={frame.levers[2] === 'REVERSE' ? '0' : '6 4'}
-            />
-            <text x="165" y="118" fill="#fbbf24" fontSize="10">
-              Point #2: {frame.levers[2]} | FPL #3: {frame.levers[3]}
-            </text>
-
-            {/* Junction Throat Block */}
-            <line
-              x1="230"
-              y1="65"
-              x2="410"
-              y2="65"
-              stroke={getBlockStrokeColor(
-                'junction-throat',
-                frame.occupiedBlocks,
-                topology.collisionBlocks,
-              )}
-              strokeWidth="10"
-            />
-            <text x="260" y="45" fill="#fde68a" fontSize="11">
-              junction-throat
-            </text>
-
-            {/* Audit Siding Branch */}
-            <line
-              x1="360"
-              y1="65"
-              x2="460"
-              y2="155"
-              stroke={getBlockStrokeColor(
-                'audit-siding',
-                frame.occupiedBlocks,
-                topology.collisionBlocks,
-              )}
-              strokeWidth="7"
-            />
-            <line
-              x1="460"
-              y1="155"
-              x2="690"
-              y2="155"
-              stroke={getBlockStrokeColor(
-                'audit-siding',
-                frame.occupiedBlocks,
-                topology.collisionBlocks,
-              )}
-              strokeWidth="7"
-            />
-            <text x="465" y="180" fill="#d6d3d1" fontSize="11">
-              audit-siding (Signal #6 + Isolator #8 // Verifier)
-            </text>
-
-            {/* Schema Bridge Block */}
-            <line
-              x1="410"
-              y1="65"
-              x2="575"
-              y2="65"
-              stroke={getBlockStrokeColor(
-                'schema-bridge',
-                frame.occupiedBlocks,
-                topology.collisionBlocks,
-              )}
-              strokeWidth="10"
-            />
-            <text x="445" y="45" fill="#fde68a" fontSize="11">
-              schema-bridge
-            </text>
-
-            {/* Prod Mainline Block */}
-            <line
-              x1="575"
-              y1="65"
-              x2="730"
-              y2="65"
-              stroke={getBlockStrokeColor(
-                'prod-mainline',
-                frame.occupiedBlocks,
-                topology.collisionBlocks,
-              )}
-              strokeWidth="8"
-            />
-            <text x="580" y="45" fill="#d6d3d1" fontSize="11">
-              prod-mainline (#5 + #7 // Deployer)
-            </text>
-          </svg>
-        </div>
-
-        {/* Kiro Crew MCP Agent Train Dispatcher */}
-        <div
-          style={{
-            backgroundColor: '#14120f',
-            border: '1px solid #57462b',
-            borderRadius: '6px',
-            padding: '16px',
-          }}
-        >
-          <h2
-            style={{
-              margin: '0 0 10px',
-              fontSize: '14px',
-              color: '#fcd34d',
-            }}
-          >
-            KIRO CREW MCP ROUTE DISPATCHER
-          </h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {AGENT_ROUTE_SPECS.map((spec) => {
-              const isRouteActive = frame.activeRoutes.some(
-                (r) => r.routeId === spec.routeId,
-              );
-              return (
-                <div
-                  key={spec.routeId}
-                  style={{
-                    padding: '8px 10px',
-                    backgroundColor: '#1c1917',
-                    border: isRouteActive
-                      ? '1px solid #10b981'
-                      : '1px solid #3f3422',
-                    borderRadius: '4px',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                    }}
-                  >
-                    <span>
-                      {spec.agentId} ({spec.routeId})
-                    </span>
-                    <span
-                      style={{
-                        color: isRouteActive ? '#34d399' : '#a8a29e',
-                      }}
-                    >
-                      {isRouteActive ? 'CLEAR' : 'HELD'}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: '11px',
-                      color: '#a8a29e',
-                      margin: '3px 0 6px',
-                    }}
-                  >
-                    {spec.corridorLabel}
-                  </div>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleMcpRouteAction(
-                          'request_route',
-                          spec.agentId,
-                          spec.routeId,
-                        )
-                      }
-                      style={{
-                        padding: '4px 8px',
-                        fontSize: '11px',
-                        backgroundColor: '#065f46',
-                        color: '#ecfdf5',
-                        border: '1px solid #10b981',
-                        borderRadius: '3px',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      MCP request_route
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleMcpRouteAction(
-                          'release_route',
-                          spec.agentId,
-                          spec.routeId,
-                        )
-                      }
-                      style={{
-                        padding: '4px 8px',
-                        fontSize: '11px',
-                        backgroundColor: '#292524',
-                        color: '#e7e5e4',
-                        border: '1px solid #57534e',
-                        borderRadius: '3px',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      MCP release_route
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {lastMcpResponse !== null && (
-            <div
-              style={{
-                marginTop: '8px',
-                padding: '6px 8px',
-                fontSize: '11px',
-                backgroundColor: '#090807',
-                border: '1px solid #44403c',
-                borderRadius: '4px',
-                color: '#d6d3d1',
-              }}
-            >
-              {!lastMcpResponse.isError &&
-              lastMcpResponse.toolName === 'request_route'
-                ? `MCP ${lastMcpResponse.agentId} -> ${lastMcpResponse.routeId}: ${
-                    lastMcpResponse.granted
-                      ? 'GRANTED'
-                      : `BLOCKED (${lastMcpResponse.blockingRuleId})`
-                  }`
-                : 'MCP tool executed'}
+        <aside className="sb-desk" aria-label="Signalman's desk">
+          <section className="reg" aria-live="polite">
+            <div className="panel-head">
+              <h2 className="panel-title caps">Register</h2>
+              <span className="panel-meta mono">step {String(frame.stepHistory.length).padStart(2, '0')}</span>
             </div>
-          )}
-        </div>
-      </section>
-
-      {/* 8-Lever Victorian Brass Frame */}
-      <section
-        style={{
-          backgroundColor: '#14120f',
-          border: '1px solid #85683a',
-          borderRadius: '6px',
-          padding: '16px',
-          marginBottom: '18px',
-        }}
-      >
-        <h2
-          style={{
-            margin: '0 0 12px',
-            fontSize: '14px',
-            color: '#fcd34d',
-          }}
-        >
-          8-LEVER VICTORIAN BRASS INTERLOCKING FRAME
-        </h2>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(8, minmax(110px, 1fr))',
-            gap: '10px',
-            overflowX: 'auto',
-          }}
-        >
-          {LEVER_DESCRIPTORS.map((desc) => {
-            const leverState = frame.levers[desc.leverId];
-            const isReverse = leverState === 'REVERSE';
-            return (
-              <div
-                key={desc.leverId}
-                style={{
-                  backgroundColor: '#1c1814',
-                  border: isReverse
-                    ? '2px solid #f59e0b'
-                    : '1px solid #44403c',
-                  borderRadius: '6px',
-                  padding: '10px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: '15px',
-                        fontWeight: 800,
-                        color: '#fef3c7',
-                      }}
-                    >
-                      #{desc.leverId}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: '10px',
-                        padding: '2px 5px',
-                        borderRadius: '3px',
-                        backgroundColor: desc.badgeColor,
-                        color: '#ffffff',
-                        fontWeight: 700,
-                      }}
-                    >
-                      {leverState}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      marginTop: '6px',
-                      color: '#f5f5f4',
-                    }}
-                  >
-                    {desc.title}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: '10px',
-                      color: '#a8a29e',
-                      marginTop: '2px',
-                    }}
-                  >
-                    {desc.roleLabel}
-                  </div>
-                </div>
-
-                {/* Mechanical Brass Lever Handle Visualization */}
-                <div
-                  style={{
-                    height: '58px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    margin: '10px 0',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '8px',
-                      height: '48px',
-                      borderRadius: '4px',
-                      backgroundColor: isReverse ? '#f59e0b' : '#a8a29e',
-                      transform: isReverse ? 'rotate(18deg)' : 'rotate(-18deg)',
-                      transition: 'transform 150ms ease',
-                      border: '1px solid #fef3c7',
-                    }}
-                  />
-                </div>
-
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '5px',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => handlePullLever(desc.leverId)}
-                    style={{
-                      padding: '5px 6px',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      backgroundColor: '#78350f',
-                      color: '#fef3c7',
-                      border: '1px solid #d97706',
-                      borderRadius: '3px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    PULL (REV)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleReleaseLever(desc.leverId)}
-                    style={{
-                      padding: '5px 6px',
-                      fontSize: '11px',
-                      backgroundColor: '#292524',
-                      color: '#d6d3d1',
-                      border: '1px solid #57534e',
-                      borderRadius: '3px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    RELEASE (NRM)
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Bottom Grid: Tappet Locking Matrix & PBT Exorcist + Trial Receipt */}
-      <section
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '16px',
-        }}
-      >
-        {/* Mechanical Tappet Locking Matrix */}
-        <div
-          style={{
-            backgroundColor: '#14120f',
-            border: '1px solid #57462b',
-            borderRadius: '6px',
-            padding: '16px',
-          }}
-        >
-          <h2
-            style={{
-              margin: '0 0 10px',
-              fontSize: '14px',
-              color: '#fcd34d',
-            }}
-          >
-            MECHANICAL TAPPET LOCKING BED ({frame.presetId})
-          </h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {tappetBars.map((bar) => (
-              <div
-                key={`${bar.ruleId}-L${bar.appliesToLever}-${bar.targetIntent}`}
-                style={{
-                  padding: '8px 10px',
-                  backgroundColor: '#1c1917',
-                  border: bar.engaged
-                    ? '1px solid #f59e0b'
-                    : '1px solid #292524',
-                  borderRadius: '4px',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                  }}
-                >
-                  <span>
-                    {bar.ruleId} (Lever #{bar.appliesToLever}{' '}
-                    {bar.targetIntent})
-                  </span>
-                  <span
-                    style={{
-                      color: bar.engaged ? '#fbbf24' : '#34d399',
-                    }}
-                  >
-                    {bar.engaged ? 'TAPPET LOCKED' : 'TAPPET FREE'}
-                  </span>
-                </div>
-                <div
-                  style={{
-                    fontSize: '11px',
-                    color: '#a8a29e',
-                    marginTop: '3px',
-                  }}
-                >
-                  {bar.earsClause}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* PBT Exorcist & Shrinking Counterexample Replay + Trial Receipt Card */}
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: '#14120f',
-              border: '1px solid #57462b',
-              borderRadius: '6px',
-              padding: '16px',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '10px',
-              }}
-            >
-              <h2 style={{ margin: 0, fontSize: '14px', color: '#fcd34d' }}>
-                PBT EXORCIST & SHRUNKEN COUNTEREXAMPLE REPLAY
-              </h2>
-              {replayBundle !== null && (
-                <button
-                  type="button"
-                  onClick={handleStepReplayForward}
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: '#991b1b',
-                    color: '#fef2f2',
-                    border: '1px solid #f87171',
-                    borderRadius: '4px',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Step Replay Forward (stepReplayForward)
-                </button>
-              )}
-            </div>
-
-            {exorcismReport === null ? (
-              <div style={{ fontSize: '12px', color: '#a8a29e' }}>
-                Click &quot;RUN PBT EXORCIST (fast-check)&quot; to execute 80
-                stepwise property sequences against {frame.presetId}.
-              </div>
-            ) : (
+            <div className="reg-body">
+              <span className="lamp" data-tone={register.tone === 'idle' ? undefined : register.tone} />
               <div>
-                <div
-                  style={{
-                    fontSize: '12px',
-                    marginBottom: '8px',
-                    color: exorcismReport.passed ? '#6ee7b7' : '#fca5a5',
-                    fontWeight: 700,
-                  }}
-                >
-                  {exorcismReport.passed
-                    ? `EXORCISM PASSED: ${exorcismReport.numRunsExecuted} runs (${exorcismReport.stepwiseAssertionsChecked} stepwise checks) verified P1 & P2.`
-                    : `COUNTEREXAMPLE ISOLATED: Shrunk ${replayBundle?.originalLength} steps -> ${replayBundle?.shrunkActions.length} minimal steps (Missing ${replayBundle?.missingRuleId}).`}
-                </div>
-
-                {replayBundle !== null && (
-                  <div
-                    style={{
-                      display: 'flex',
-                      gap: '8px',
-                      flexWrap: 'wrap',
-                      marginTop: '8px',
-                    }}
-                  >
-                    {replayBundle.shrunkActions.map((act, stepIdx) => {
-                      const isCurrentStep = replayCursor === stepIdx;
-                      return (
-                        <div
-                          key={`shrunk-step-${act.leverId}-${act.intent}-${String(stepIdx)}`}
-                          style={{
-                            padding: '6px 10px',
-                            borderRadius: '4px',
-                            border: isCurrentStep
-                              ? '2px solid #ef4444'
-                              : '1px solid #57534e',
-                            backgroundColor: isCurrentStep
-                              ? '#7f1d1d'
-                              : '#1c1917',
-                            fontSize: '12px',
-                          }}
-                        >
-                          Step {stepIdx + 1}: Lever #{act.leverId} {act.intent}
-                        </div>
-                      );
-                    })}
-                  </div>
+                <p className={register.code ? 'reg-headline is-code' : 'reg-headline display'}>{register.headline}</p>
+                <p className="reg-sub">{register.sub}</p>
+                {register.clause !== null && <p className="reg-clause">{register.clause}</p>}
+                {register.source !== null && (
+                  <p className="reg-source">
+                    <b>{register.source}</b> · {SPEC_SOURCE}
+                  </p>
                 )}
               </div>
-            )}
-          </div>
-
-          {/* Post-Hackathon PBT Trial Receipt Card */}
-          <div
-            style={{
-              backgroundColor: '#14120f',
-              border: '1px solid #85683a',
-              borderRadius: '6px',
-              padding: '16px',
-            }}
-          >
-            <h2
-              style={{
-                margin: '0 0 10px',
-                fontSize: '14px',
-                color: '#fcd34d',
-              }}
-            >
-              PBT TRIAL RECEIPT (6 GPT-6 PRO EVALUATION METRICS)
-            </h2>
-            {trialReceipt === null ? (
-              <div style={{ fontSize: '12px', color: '#a8a29e' }}>
-                Run PBT Exorcist to populate the 6 formal trial evaluation
-                metrics (`oracleDiscriminatesFault`, `reachabilityWitnesses`,
-                `shrinkingRatio`, `replayDeterministic`, `executionDurationMs`,
-                `stepwiseAssertionsChecked`).
+            </div>
+            <div className="reg-foot">
+              <div className="steps" aria-label="Recent lever moves">
+                {recent.map((step) => (
+                  <span
+                    key={step.stepIndex}
+                    className="plate"
+                    data-kind={step.outcome === 'BLOCKED_BY_INTERLOCK' ? 'blocked' : step.action.intent === 'PULL' ? 'pull' : 'release'}
+                    title={`${step.outcome}${step.blockingRuleId ? ` · ${step.blockingRuleId}` : ''}`}
+                  >
+                    {actionCode(step.action.leverId, step.action.intent)}
+                  </span>
+                ))}
               </div>
-            ) : (
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: '8px',
-                  fontSize: '12px',
-                }}
-              >
-                <div
-                  style={{
-                    padding: '8px',
-                    backgroundColor: '#1c1917',
-                    borderRadius: '4px',
-                  }}
-                >
-                  <div style={{ color: '#a8a29e', fontSize: '11px' }}>
-                    1. oracleDiscriminatesFault
-                  </div>
-                  <div style={{ fontWeight: 700, color: '#34d399' }}>
-                    {String(trialReceipt.oracleDiscriminatesFault)} (SAFE=PASS,
-                    CURSED=FAIL)
-                  </div>
-                </div>
+              {hint !== null && (
+                <span className="hint caps">
+                  Next · <b>{hint}</b>
+                </span>
+              )}
+            </div>
+          </section>
 
-                <div
-                  style={{
-                    padding: '8px',
-                    backgroundColor: '#1c1917',
-                    borderRadius: '4px',
-                  }}
-                >
-                  <div style={{ color: '#a8a29e', fontSize: '11px' }}>
-                    2. reachabilityWitnesses
-                  </div>
-                  <div style={{ fontWeight: 700 }}>
-                    cleared={trialReceipt.reachabilityWitnesses.clearedSignalCount}{' '}
-                    | blocked=
-                    {trialReceipt.reachabilityWitnesses.blockedInterlockCount}
-                  </div>
-                </div>
+          <Exorcist
+            presetId={frame.presetId}
+            report={exorcismReport}
+            bundle={replayBundle}
+            cursor={replayCursor}
+            onRun={handleRunExorcism}
+            onStep={handleStepReplayForward}
+          />
 
-                <div
-                  style={{
-                    padding: '8px',
-                    backgroundColor: '#1c1917',
-                    borderRadius: '4px',
-                  }}
-                >
-                  <div style={{ color: '#a8a29e', fontSize: '11px' }}>
-                    3. shrinkingRatio
-                  </div>
-                  <div style={{ fontWeight: 700 }}>
-                    {trialReceipt.shrinkingRatio.originalLength} -&gt;{' '}
-                    {trialReceipt.shrinkingRatio.shrunkLength} steps (
-                    {trialReceipt.shrinkingRatio.reductionFactor}x)
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    padding: '8px',
-                    backgroundColor: '#1c1917',
-                    borderRadius: '4px',
-                  }}
-                >
-                  <div style={{ color: '#a8a29e', fontSize: '11px' }}>
-                    4. replayDeterministic
-                  </div>
-                  <div style={{ fontWeight: 700, color: '#34d399' }}>
-                    {String(trialReceipt.replayDeterministic)}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    padding: '8px',
-                    backgroundColor: '#1c1917',
-                    borderRadius: '4px',
-                  }}
-                >
-                  <div style={{ color: '#a8a29e', fontSize: '11px' }}>
-                    5. executionDurationMs
-                  </div>
-                  <div style={{ fontWeight: 700 }}>
-                    {trialReceipt.executionDurationMs} ms
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    padding: '8px',
-                    backgroundColor: '#1c1917',
-                    borderRadius: '4px',
-                  }}
-                >
-                  <div style={{ color: '#a8a29e', fontSize: '11px' }}>
-                    6. stepwiseAssertionsChecked
-                  </div>
-                  <div style={{ fontWeight: 700 }}>
-                    {trialReceipt.stepwiseAssertionsChecked} assertions
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
+          <TrialReceipt receipt={trialReceipt} />
+        </aside>
+      </div>
     </main>
+  );
+}
+
+// ─────────────────────────────── the PBT exorcist ───────────────────────────────
+
+interface ExorcistProps {
+  presetId: PresetId;
+  report: ExorcismReport | null;
+  bundle: CounterexampleReplayBundle | null;
+  cursor: number | null;
+  onRun: () => void;
+  onStep: () => void;
+}
+
+function Exorcist({ presetId, report, bundle, cursor, onRun, onStep }: ExorcistProps) {
+  const cursed = presetId !== 'STANDARD_SAFE';
+
+  return (
+    <section className="exo" aria-labelledby="exo-title">
+      <div className="exo-top">
+        <div>
+          <h2 id="exo-title" className="exo-title display">
+            PBT Exorcist
+          </h2>
+          <p className="exo-sub mono">fast-check · P1 · P2 after every step</p>
+        </div>
+        <div className="exo-count">
+          <span className="caps">Stepwise checks</span>
+          <span className={report === null ? 'mono is-dim' : 'mono'}>
+            {report === null ? '000' : String(report.stepwiseAssertionsChecked).padStart(3, '0')}
+          </span>
+        </div>
+      </div>
+
+      <div className="exo-run">
+        <span className="exo-target" data-tone={cursed ? 'red' : undefined}>
+          <span className="caps">Against</span>
+          <span className="mono">{presetId}</span>
+        </span>
+        <button type="button" className="btn-brass" onClick={onRun}>
+          Run PBT Exorcist
+        </button>
+      </div>
+
+      <div className="exo-result">
+        {report === null && (
+          <p className="exo-idle">
+            Up to 80 random lever sequences, each started from a fresh frame. The topology oracle checks for
+            collisions after every single step — then fast-check shrinks whatever it catches.
+          </p>
+        )}
+
+        {report !== null && (report.passed || bundle === null) && <ExorcismPassed report={report} />}
+        {report !== null && !report.passed && bundle !== null && (
+          <Counterexample report={report} bundle={bundle} cursor={cursor} onStep={onStep} />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ExorcismPassed({ report }: { report: ExorcismReport }) {
+  return (
+    <>
+      <span className="exo-verdict caps" data-tone="green">
+        <span className="lamp" data-tone="green" />
+        Passed · P1 · P2 hold
+      </span>
+      <p className="exo-pass display">
+        {report.numRunsExecuted} runs, 0 violations.
+        <small>
+          {report.stepwiseAssertionsChecked} stepwise checks · {report.reachabilityWitnesses.clearedSignalCount} cleared signals ·{' '}
+          {report.reachabilityWitnesses.blockedInterlockCount} refused pulls on {report.presetId}
+        </small>
+      </p>
+    </>
+  );
+}
+
+interface CounterexampleProps {
+  report: ExorcismReport;
+  bundle: CounterexampleReplayBundle;
+  cursor: number | null;
+  onStep: () => void;
+}
+
+/**
+ * The kernel reports the failing run only by its length, so its steps are drawn as empty slots; inventing their
+ * contents would put a sequence on screen that fast-check never generated.
+ */
+function Counterexample({ report, bundle, cursor, onStep }: CounterexampleProps) {
+  const total = bundle.shrunkActions.length;
+  const finished = cursor === total - 1;
+  const reduction = (bundle.originalLength / total).toFixed(2);
+
+  return (
+    <>
+      <span className="exo-verdict caps" data-tone="red">
+        <span className="lamp" data-tone="red" />
+        Caught on run {report.numRunsExecuted} · {bundle.violatedProperty}
+      </span>
+      <div className="shrink">
+        <div className="shrink-col">
+          <span className="caps">Failing run</span>
+          <div className="shrink-row" aria-hidden="true">
+            {Array.from({ length: bundle.originalLength }, (_, i) => (
+              // react-doctor-disable-next-line no-array-index-as-key -- empty slots have no identity but their position
+              <span key={`slot-${i}`} className="plate" data-kind="ghost" style={{ '--i': i } as CSSProperties} />
+            ))}
+          </div>
+          <p className="shrink-count display is-dim">{bundle.originalLength} steps</p>
+        </div>
+        <span className="shrink-arrow" aria-hidden="true">
+          →
+        </span>
+        <div className="shrink-col">
+          <span className="caps">Shrunk</span>
+          <div className="shrink-row">
+            {bundle.shrunkActions.map((action, i) => (
+              <span
+                // react-doctor-disable-next-line no-array-index-as-key -- a replay step is identified by its position; the list never reorders
+                key={`step-${i}-${actionCode(action.leverId, action.intent)}`}
+                className={`plate${cursor !== null && i <= cursor ? ' is-lit' : ''}`}
+                data-kind={i === bundle.failingStepIndex ? 'fail' : action.intent === 'PULL' ? 'pull' : 'release'}
+                style={{ '--i': i + 4 } as CSSProperties}
+              >
+                {actionCode(action.leverId, action.intent)}
+              </span>
+            ))}
+          </div>
+          <p className="shrink-count display">{total} steps</p>
+        </div>
+      </div>
+      <p className="shrink-note caps">
+        Shrunk {bundle.originalLength} → {total} · {reduction}× · replayable · seed {bundle.seed}
+      </p>
+      <div className="replay">
+        <span className="replay-state" data-tone={finished ? 'red' : undefined}>
+          {cursor === null ? (
+            <>
+              replay <b>ready</b> · {total} steps
+            </>
+          ) : finished ? (
+            <>
+              <b>{bundle.violatedProperty === 'P1_NO_CONFLICTING_ROUTES' ? 'collision' : 'lock violation'} reproduced</b> at
+              step {cursor + 1}
+            </>
+          ) : (
+            <>
+              replay step <b>{cursor + 1}</b> / {total}
+            </>
+          )}
+        </span>
+        <button type="button" className="btn-steel" onClick={onStep} disabled={finished}>
+          Step Replay Forward
+        </button>
+      </div>
+    </>
+  );
+}
+
+// ─────────────────────────────── the trial receipt ───────────────────────────────
+
+interface Metric {
+  key: string;
+  value: string;
+  note: string;
+  tone?: 'green' | 'red';
+}
+
+function receiptMetrics(receipt: PbtTrialReceipt): Metric[] {
+  const { safeReport, cursedReport } = receipt;
+  const verdict = (passed: boolean) => (passed ? 'passes' : 'fails');
+  return [
+    {
+      key: 'oracleDiscriminatesFault',
+      value: String(receipt.oracleDiscriminatesFault),
+      note: `SAFE ${verdict(safeReport.passed)} · CURSED ${verdict(cursedReport.passed)}`,
+      tone: receipt.oracleDiscriminatesFault ? 'green' : 'red',
+    },
+    {
+      key: 'reachabilityWitnesses',
+      value: `${receipt.reachabilityWitnesses.clearedSignalCount} / ${receipt.reachabilityWitnesses.blockedInterlockCount}`,
+      note: `cleared · blocked · ${receipt.reachabilityWitnesses.appliedActionCount} applied`,
+    },
+    {
+      key: 'shrinkingRatio',
+      value: `${receipt.shrinkingRatio.originalLength} → ${receipt.shrinkingRatio.shrunkLength}`,
+      note: `${receipt.shrinkingRatio.reductionFactor}× smaller`,
+    },
+    {
+      key: 'replayDeterministic',
+      value: String(receipt.replayDeterministic),
+      note: 'same failing step, replayed twice',
+      tone: receipt.replayDeterministic ? 'green' : 'red',
+    },
+    {
+      key: 'executionDurationMs',
+      value: `${receipt.executionDurationMs} ms`,
+      note: `both tables · ${safeReport.numRunsExecuted + cursedReport.numRunsExecuted} runs`,
+    },
+    {
+      key: 'stepwiseAssertionsChecked',
+      value: String(receipt.stepwiseAssertionsChecked),
+      note: `${safeReport.stepwiseAssertionsChecked} safe · ${cursedReport.stepwiseAssertionsChecked} cursed`,
+    },
+  ];
+}
+
+function TrialReceipt({ receipt }: { receipt: PbtTrialReceipt | null }) {
+  if (receipt === null) {
+    return (
+      <section className="ticket-empty" aria-label="PBT Trial Receipt">
+        <span className="caps ticket-title">PBT Trial Receipt</span>
+        <p>Printed when the exorcist runs: six measurements of whether the property tests actually did their job.</p>
+      </section>
+    );
+  }
+  const verified = receipt.oracleDiscriminatesFault && receipt.replayDeterministic;
+  return (
+    <section className="ticket" aria-label="PBT Trial Receipt">
+      <div className="ticket-head">
+        <h2 className="ticket-title caps">PBT Trial Receipt</h2>
+        <span className="ticket-serial mono">
+          six measurements · seed {receipt.cursedReport.counterexample?.seed ?? '—'}
+        </span>
+      </div>
+      {verified && (
+        <span className="stamp" aria-label="Verified">
+          Verified
+        </span>
+      )}
+      <ul className="ticket-grid">
+        {receiptMetrics(receipt).map((metric, index) => (
+          <li key={metric.key}>
+            <span className="metric-key">
+              <i>{index + 1}.</i> {metric.key}
+            </span>
+            <span className="metric-value" data-tone={metric.tone}>
+              {metric.value}
+            </span>
+            <span className="metric-note">{metric.note}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
