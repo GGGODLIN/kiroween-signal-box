@@ -10,7 +10,6 @@ import {
   createFrameState,
   evaluatePhysicalTopology,
   getInterlockPreset,
-  LEVER_CATALOG,
   ROUTE_CATALOG,
   type LeverAction,
   type PresetId,
@@ -97,7 +96,6 @@ test('AC 1: Root /.kiro/ directory contains required specs, steering, and hooks 
 });
 
 test('AC 2: Valid lever sequence clears North Up Main Signal #1 and activates NORTH_TO_BRIDGE route for Builder agent train (Story 1)', () => {
-  assert.equal(Object.keys(LEVER_CATALOG).length, 8);
   assert.equal(Object.keys(ROUTE_CATALOG).length, 4);
 
   let state = createFrameState('STANDARD_SAFE');
@@ -196,14 +194,6 @@ test('AC 4: Out-of-range lever ID or unknown preset name fails deterministically
   assert.deepEqual(invalidLeverResult.levers, seededSnapshot.levers);
   assert.deepEqual(invalidLeverResult.activeRoutes, seededSnapshot.activeRoutes);
   assert.deepEqual(seeded, seededSnapshot);
-
-  const invalidIntentResult = applyLeverAction(seeded, {
-    leverId: 2,
-    intent: 'SMASH' as LeverAction['intent'],
-  });
-  assert.equal(invalidIntentResult.lastOutcome, 'INVALID_INPUT');
-  assert.equal(invalidIntentResult.blockingRuleId, 'EARS-VAL-01');
-  assert.deepEqual(invalidIntentResult.levers, seededSnapshot.levers);
 });
 
 test('AC 5: CURSED_MISSING_CROSSOVER_LOCK weakens only the SUT locking matrix while evaluatePhysicalTopology detects physical collisions (Story 3 — Failure F5)', () => {

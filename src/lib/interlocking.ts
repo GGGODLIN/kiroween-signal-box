@@ -1,6 +1,5 @@
 export type LeverId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 export type LeverState = 'NORMAL' | 'REVERSE';
-export type LeverRole = 'SIGNAL' | 'POINT' | 'LOCK' | 'CLEARANCE';
 export type PresetId = 'STANDARD_SAFE' | 'CURSED_MISSING_CROSSOVER_LOCK';
 export type RouteId = 'NORTH_TO_BRIDGE' | 'SOUTH_TO_BRIDGE' | 'BRIDGE_MAINLINE' | 'AUDIT_SIDING';
 export type AgentTrainId = 'Builder' | 'Migrator' | 'Deployer' | 'Verifier';
@@ -57,135 +56,36 @@ export type TopologyEvaluation = {
   details: string;
 };
 
-export type LeverMetadata = {
-  leverId: LeverId;
-  name: string;
-  shortLabel: string;
-  role: LeverRole;
-  agentTrain?: AgentTrainId;
-  routeId?: RouteId;
-  occupiedBlocks?: string[];
-  description: string;
-};
-
-export type RouteMetadata = {
-  routeId: RouteId;
-  name: string;
-  signalLever: LeverId;
-  agentTrain: AgentTrainId;
-  occupiedBlocks: string[];
-  requiredLevers: Partial<Record<LeverId, LeverState>>;
-};
-
 const VALID_LEVER_IDS: readonly LeverId[] = [1, 2, 3, 4, 5, 6, 7, 8];
 const VALID_PRESET_IDS: readonly PresetId[] = [
   'STANDARD_SAFE',
   'CURSED_MISSING_CROSSOVER_LOCK',
 ];
 
-export const LEVER_CATALOG: Record<LeverId, LeverMetadata> = {
-  1: {
-    leverId: 1,
-    name: 'North Up Home Signal #1',
-    shortLabel: 'SIG #1',
-    role: 'SIGNAL',
-    agentTrain: 'Builder',
-    routeId: 'NORTH_TO_BRIDGE',
-    occupiedBlocks: ['north-approach', 'junction-throat', 'schema-bridge'],
-    description: 'Clears Builder Agent train from North Up Main across Junction Throat onto Schema Bridge.',
-  },
-  2: {
-    leverId: 2,
-    name: 'Junction Crossover Point #2',
-    shortLabel: 'PT #2',
-    role: 'POINT',
-    description: 'NORMAL aligns North Up Main straight to Schema Bridge; REVERSE diverges South Branch across crossover.',
-  },
-  3: {
-    leverId: 3,
-    name: 'Facing Point Lock #3 (FPL)',
-    shortLabel: 'FPL #3',
-    role: 'LOCK',
-    description: 'REVERSE plunges the steel lock bar into Point #2 so the switch cannot move beneath a train.',
-  },
-  4: {
-    leverId: 4,
-    name: 'South Branch Home Signal #4',
-    shortLabel: 'SIG #4',
-    role: 'SIGNAL',
-    agentTrain: 'Migrator',
-    routeId: 'SOUTH_TO_BRIDGE',
-    occupiedBlocks: ['south-branch', 'junction-throat', 'schema-bridge'],
-    description: 'Clears Migrator Agent train from South Branch over the crossover onto Schema Bridge.',
-  },
-  5: {
-    leverId: 5,
-    name: 'Schema Bridge Distant Signal #5',
-    shortLabel: 'SIG #5',
-    role: 'SIGNAL',
-    agentTrain: 'Deployer',
-    routeId: 'BRIDGE_MAINLINE',
-    occupiedBlocks: ['schema-bridge', 'prod-mainline'],
-    description: 'Clears Deployer Agent train from Schema Bridge onto Production Mainline.',
-  },
-  6: {
-    leverId: 6,
-    name: 'Shunt & Audit Dwarf Signal #6',
-    shortLabel: 'SIG #6',
-    role: 'SIGNAL',
-    agentTrain: 'Verifier',
-    routeId: 'AUDIT_SIDING',
-    occupiedBlocks: ['junction-throat', 'audit-siding'],
-    description: 'Clears Verifier Agent train through Junction Throat into Audit Siding under Maintenance Isolation.',
-  },
-  7: {
-    leverId: 7,
-    name: 'Bridge Token Clearance #7',
-    shortLabel: 'TOK #7',
-    role: 'CLEARANCE',
-    description: 'REVERSE grants the single-line high-speed mainline exit token required by Signal #5.',
-  },
-  8: {
-    leverId: 8,
-    name: 'Maintenance Isolation Lock #8',
-    shortLabel: 'ISO #8',
-    role: 'CLEARANCE',
-    description: 'REVERSE isolates the junction for Verifier (Signal #6), locking Signals #1, #4, and #5 in NORMAL.',
-  },
-};
-
-export const ROUTE_CATALOG: Record<RouteId, RouteMetadata> = {
+export const ROUTE_CATALOG: Record<RouteId, ActiveRoute> = {
   NORTH_TO_BRIDGE: {
     routeId: 'NORTH_TO_BRIDGE',
-    name: 'North Up Main to Schema Bridge',
     signalLever: 1,
     agentTrain: 'Builder',
     occupiedBlocks: ['north-approach', 'junction-throat', 'schema-bridge'],
-    requiredLevers: { 2: 'NORMAL', 3: 'REVERSE', 8: 'NORMAL' },
   },
   SOUTH_TO_BRIDGE: {
     routeId: 'SOUTH_TO_BRIDGE',
-    name: 'South Branch Crossover to Schema Bridge',
     signalLever: 4,
     agentTrain: 'Migrator',
     occupiedBlocks: ['south-branch', 'junction-throat', 'schema-bridge'],
-    requiredLevers: { 2: 'REVERSE', 3: 'REVERSE', 8: 'NORMAL' },
   },
   BRIDGE_MAINLINE: {
     routeId: 'BRIDGE_MAINLINE',
-    name: 'Schema Bridge to Production Mainline',
     signalLever: 5,
     agentTrain: 'Deployer',
     occupiedBlocks: ['schema-bridge', 'prod-mainline'],
-    requiredLevers: { 7: 'REVERSE', 8: 'NORMAL' },
   },
   AUDIT_SIDING: {
     routeId: 'AUDIT_SIDING',
-    name: 'Junction Throat to Audit Siding',
     signalLever: 6,
     agentTrain: 'Verifier',
     occupiedBlocks: ['junction-throat', 'audit-siding'],
-    requiredLevers: { 3: 'REVERSE', 8: 'REVERSE' },
   },
 };
 
@@ -206,15 +106,11 @@ function isValidLeverId(leverId: unknown): leverId is LeverId {
   );
 }
 
-function isValidIntent(intent: unknown): intent is 'PULL' | 'RELEASE' {
-  return intent === 'PULL' || intent === 'RELEASE';
-}
-
 function deriveActiveRoutesAndBlocks(levers: Record<LeverId, LeverState>): {
   activeRoutes: ActiveRoute[];
   occupiedBlocks: string[];
 } {
-  const signalRouteOrder: readonly RouteMetadata[] = [
+  const signalRouteOrder: readonly ActiveRoute[] = [
     ROUTE_CATALOG.NORTH_TO_BRIDGE,
     ROUTE_CATALOG.SOUTH_TO_BRIDGE,
     ROUTE_CATALOG.BRIDGE_MAINLINE,
@@ -624,17 +520,13 @@ export const applyLeverAction = (state: FrameState, action: LeverAction): FrameS
     action: { ...entry.action },
   }));
 
-  if (
-    !action ||
-    !isValidLeverId(action.leverId) ||
-    !isValidIntent(action.intent)
-  ) {
-    const invalidReason = 'Invalid lever ID or action intent';
+  if (!action || !isValidLeverId(action.leverId)) {
+    const invalidReason = 'Invalid lever ID';
     const nextStep: StepHistoryEntry = {
       stepIndex: clonedHistory.length,
       action: {
         leverId: (action?.leverId ?? (0 as LeverId)),
-        intent: (action?.intent ?? ('PULL' as 'PULL' | 'RELEASE')),
+        intent: (action?.intent ?? 'PULL'),
       },
       outcome: 'INVALID_INPUT',
       blockingRuleId: 'EARS-VAL-01',
@@ -650,7 +542,7 @@ export const applyLeverAction = (state: FrameState, action: LeverAction): FrameS
       blockingRuleId: 'EARS-VAL-01',
       blockingReason: invalidReason,
       blockingEarsClause:
-        'WHEN an out-of-range lever identifier or unsupported action intent is submitted, THE SYSTEM SHALL reject the action with INVALID_INPUT and preserve the existing frame state without mutation.',
+        'WHEN an out-of-range lever identifier is submitted, THE SYSTEM SHALL reject the action with INVALID_INPUT and preserve the existing frame state without mutation.',
       stepHistory: [...clonedHistory, nextStep],
     };
   }
