@@ -1,0 +1,16 @@
+{
+  "name": "verify-interlock-on-save",
+  "version": "1.0.0",
+  "description": "Runs the Victorian Mechanical Interlocking & EARS compliance unit test suite whenever interlocking source or spec files are saved.",
+  "trigger": {
+    "event": "onFileSave",
+    "filePatterns": [
+      "src/lib/interlocking.ts",
+      ".kiro/specs/signal-box/requirements.md"
+    ]
+  },
+  "action": {
+    "type": "runCommand",
+    "command": "node --experimental-strip-types --test tests/ticket-01-interlocking-and-kiro.test.ts"
+  }
+}

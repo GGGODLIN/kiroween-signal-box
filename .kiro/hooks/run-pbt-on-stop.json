@@ -1,0 +1,12 @@
+{
+  "name": "run-pbt-on-stop",
+  "version": "1.0.0",
+  "description": "Executes the full Signal Box test suite including fast-check stepwise PBT Exorcist calibration when an agent turn completes.",
+  "trigger": {
+    "event": "onAgentStop"
+  },
+  "action": {
+    "type": "runCommand",
+    "command": "npm test"
+  }
+}
