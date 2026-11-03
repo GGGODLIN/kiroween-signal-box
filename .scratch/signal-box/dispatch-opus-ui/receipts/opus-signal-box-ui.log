@@ -1,0 +1,20 @@
+21:21:45 start waiting backend=herdr-core worker=opus-signal-box-ui parent=t1x session=4373a6e2-0a23-41e9-b8c3-7ac58b10e790
+21:24:45 wait rc=0 result={"children":[],"ended":false,"exit_code":null,"reason":"timeout","signal":null,"status":"working","terminal":"t3g","turn":0}
+21:27:45 wait rc=0 result={"children":[],"ended":false,"exit_code":null,"reason":"timeout","signal":null,"status":"working","terminal":"t3g","turn":0}
+21:30:45 wait rc=0 result={"children":[],"ended":false,"exit_code":null,"reason":"timeout","signal":null,"status":"working","terminal":"t3g","turn":0}
+21:33:45 wait rc=0 result={"children":[],"ended":false,"exit_code":null,"reason":"timeout","signal":null,"status":"working","terminal":"t3g","turn":0}
+21:36:45 wait rc=0 result={"children":[],"ended":false,"exit_code":null,"reason":"timeout","signal":null,"status":"working","terminal":"t3g","turn":0}
+21:39:45 wait rc=0 result={"children":[],"ended":false,"exit_code":null,"reason":"timeout","signal":null,"status":"working","terminal":"t3g","turn":0}
+21:42:45 wait rc=0 result={"children":[],"ended":false,"exit_code":null,"reason":"timeout","signal":null,"status":"working","terminal":"t3g","turn":0}
+21:45:45 wait rc=0 result={"children":[],"ended":false,"exit_code":null,"reason":"timeout","signal":null,"status":"working","terminal":"t3g","turn":0}
+21:48:45 wait rc=0 result={"children":[],"ended":false,"exit_code":null,"reason":"timeout","signal":null,"status":"working","terminal":"t3g","turn":0}
+21:51:45 wait rc=0 result={"children":[],"ended":false,"exit_code":null,"reason":"timeout","signal":null,"status":"working","terminal":"t3g","turn":0}
+21:54:45 wait rc=0 result={"children":[],"ended":false,"exit_code":null,"reason":"timeout","signal":null,"status":"working","terminal":"t3g","turn":0}
+21:57:46 wait rc=0 result={"children":[],"ended":false,"exit_code":null,"reason":"timeout","signal":null,"status":"working","terminal":"t3g","turn":0}
+22:00:46 wait rc=0 result={"children":[],"ended":false,"exit_code":null,"reason":"timeout","signal":null,"status":"working","terminal":"t3g","turn":0}
+22:03:46 wait rc=0 result={"children":[],"ended":false,"exit_code":null,"reason":"timeout","signal":null,"status":"working","terminal":"t3g","turn":0}
+22:06:46 wait rc=0 result={"children":[],"ended":false,"exit_code":null,"reason":"timeout","signal":null,"status":"working","terminal":"t3g","turn":0}
+22:09:46 wait rc=0 result={"children":[],"ended":false,"exit_code":null,"reason":"timeout","signal":null,"status":"working","terminal":"t3g","turn":0}
+22:12:46 wait rc=0 result={"children":[],"ended":false,"exit_code":null,"reason":"timeout","signal":null,"status":"working","terminal":"t3g","turn":0}
+22:12:51 wait rc=0 result={"children":[],"ended":true,"exit_code":null,"reason":"status","signal":null,"status":"done","terminal":"t3g","turn":1}
+22:12:51 send rc=0 status=done result={"started":true,"status":"done","turn":114}
