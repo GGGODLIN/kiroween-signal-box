@@ -4,7 +4,7 @@
 
 **Blocked by:** `02 — Stepwise fast-check PBT Exorcist, Shrinking Counterexample Replay & Trial Receipt`
 
-**Status:** `ready-for-agent`
+**Status:** `done`
 
 **Needs:** Tickets 01 and 02 completed.
 
@@ -18,10 +18,13 @@
 
 **Regression scope:** Interactive lever frame, tappet bed, and track diagram state (`Story 1, 2`), live PBT Exorcist and step-by-step counterexample replay in UI (`Story 4`), and MCP tool coordination for Kiro Crew agents (`Story 5`).
 
-- [ ] `createSignalBoxStore` exposes lever state, tappet locking bars, active agent trains, EARS rule citations, audio mute state, and actions to pull/release levers, toggle presets, trigger `runExorcism()`, and step through shrunken counterexample frames — Source: Story 1
-- [ ] Switching presets (`STANDARD_SAFE` ↔ `CURSED_MISSING_CROSSOVER_LOCK`) while a counterexample replay or collision alert is active immediately clears stale replay cursors, collision banners, and previous preset lever states — Source: Story 4 — Failure: F1
-- [ ] `executeSignalBoxMcpTool` supports `request_route`, `release_route`, `inspect_interlock`, and `run_pbt_exorcism`, granting or rejecting agent route requests using the exact same interlocking kernel and EARS rules as manual lever pulls — Source: Story 5 — Failure: F5
-- [ ] Invoking `executeSignalBoxMcpTool` with a missing/empty `agentId`, unknown tool name, or invalid `routeId` returns a structured error payload (`isError: true`, `errorCode`) without throwing an unhandled exception — Source: Story 5 — Failure: F2
-- [ ] Next.js page renders the Victorian brass lever frame, tappet locking matrix, illuminated track diagram, PBT Exorcist & Shrinking Replay panel, and PBT Trial Receipt card, and `npm run build` succeeds cleanly — Source: Story 1
+- [x] `createSignalBoxStore` exposes lever state, tappet locking bars, active agent trains, EARS rule citations, audio mute state, and actions to pull/release levers, toggle presets, trigger `runExorcism()`, and step through shrunken counterexample frames — Source: Story 1
+- [x] Switching presets (`STANDARD_SAFE` ↔ `CURSED_MISSING_CROSSOVER_LOCK`) while a counterexample replay or collision alert is active immediately clears stale replay cursors, collision banners, and previous preset lever states — Source: Story 4 — Failure: F1
+- [x] `executeSignalBoxMcpTool` supports `request_route`, `release_route`, `inspect_interlock`, and `run_pbt_exorcism`, granting or rejecting agent route requests using the exact same interlocking kernel and EARS rules as manual lever pulls — Source: Story 5 — Failure: F5
+- [x] Invoking `executeSignalBoxMcpTool` with a missing/empty `agentId`, unknown tool name, or invalid `routeId` returns a structured error payload (`isError: true`, `errorCode`) without throwing an unhandled exception — Source: Story 5 — Failure: F2
+- [x] Next.js page renders the Victorian brass lever frame, tappet locking matrix, illuminated track diagram, PBT Exorcist & Shrinking Replay panel, and PBT Trial Receipt card, and `npm run build` succeeds cleanly — Source: Story 1
 
 ## Verification Log
+
+- **Ticket 03 TDD & Verification**: `tests/ticket-03-ui-store-and-mcp.test.ts` written first at `Seam 2` (observed RED: 0 pass / 5 fail), then implemented `src/lib/signal-box-store.ts`, `src/app/api/mcp/route.ts`, `src/app/layout.tsx`, and `src/app/page.tsx`. Verified GREEN: 18/18 tests across `tests/ticket-01..03*.test.ts` pass (`107.3ms`), `tsc --noEmit` 0 errors, and `npm run build` succeeds cleanly.
+- **ticket-yagni runner status**: Runner returned `Unreviewed: relay http 502: {"error_body": "selected backend unavailable\n"}`; recorded per `/implement` Step 2 rule (full YAGNI review will also run at Step 3 Close out via `review-implement`).
