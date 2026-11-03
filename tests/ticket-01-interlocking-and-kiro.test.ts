@@ -194,6 +194,15 @@ test('AC 4: Out-of-range lever ID or unknown preset name fails deterministically
   assert.deepEqual(invalidLeverResult.levers, seededSnapshot.levers);
   assert.deepEqual(invalidLeverResult.activeRoutes, seededSnapshot.activeRoutes);
   assert.deepEqual(seeded, seededSnapshot);
+
+  const invalidIntentResult = applyLeverAction(seeded, {
+    leverId: 3,
+    intent: 'INVALID' as LeverAction['intent'],
+  });
+  assert.equal(invalidIntentResult.lastOutcome, 'INVALID_INPUT');
+  assert.equal(invalidIntentResult.blockingRuleId, 'EARS-VAL-01');
+  assert.deepEqual(invalidIntentResult.levers, seededSnapshot.levers);
+  assert.deepEqual(invalidIntentResult.activeRoutes, seededSnapshot.activeRoutes);
 });
 
 test('AC 5: CURSED_MISSING_CROSSOVER_LOCK weakens only the SUT locking matrix while evaluatePhysicalTopology detects physical collisions (Story 3 — Failure F5)', () => {

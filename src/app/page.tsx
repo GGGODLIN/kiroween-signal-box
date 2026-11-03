@@ -104,6 +104,8 @@ const AGENT_ROUTE_SPECS: readonly AgentRouteCardSpec[] = [
   },
 ];
 
+let sharedAudioContext: AudioContext | null = null;
+
 function playMechanicalSound(cue: SoundCue, muted: boolean): void {
   if (
     muted ||
@@ -115,14 +117,24 @@ function playMechanicalSound(cue: SoundCue, muted: boolean): void {
   }
 
   try {
-    const AudioCtx = window.AudioContext;
-    const ctx = new AudioCtx();
+    if (!sharedAudioContext || sharedAudioContext.state === 'closed') {
+      const AudioCtx = window.AudioContext;
+      sharedAudioContext = new AudioCtx();
+    }
+    const ctx = sharedAudioContext;
+    if (ctx.state === 'suspended') {
+      void ctx.resume();
+    }
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
     osc.connect(gain);
     gain.connect(ctx.destination);
+    osc.onended = () => {
+      osc.disconnect();
+      gain.disconnect();
+    };
 
     if (cue === 'LEVER_LATCH') {
       osc.type = 'triangle';
@@ -472,7 +484,9 @@ export default function SignalBoxPage() {
             >
               {topology.safe
                 ? 'ORACLE: P1 & P2 INVARIANTS HOLD'
-                : `COLLISION: ${topology.collisionBlocks.join(', ')}`}
+                : topology.collisionBlocks.length > 0
+                  ? `COLLISION: ${topology.collisionBlocks.join(', ')}`
+                  : `LOCK VIOLATION: SIGNAL #${topology.misalignedSignals.join(', #')}`}
             </span>
           </div>
 

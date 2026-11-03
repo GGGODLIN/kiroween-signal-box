@@ -137,6 +137,7 @@ test('AC 3: executeSignalBoxMcpTool supports request_route, release_route, inspe
   }
 
   // 2. Migrator requests conflicting SOUTH_TO_BRIDGE while NORTH_TO_BRIDGE is active -> rejected by EARS-ILK-01
+  const leversBeforeRejectedRequests = { ...store.getState().frame.levers };
   const rejectMigrator = executeSignalBoxMcpTool(store, {
     toolName: 'request_route',
     agentId: 'Migrator',
@@ -150,6 +151,20 @@ test('AC 3: executeSignalBoxMcpTool supports request_route, release_route, inspe
       rejectMigrator.blockingEarsClause ?? '',
       /WHEN .+ THE SYSTEM SHALL /,
     );
+    assert.deepEqual(rejectMigrator.frameState.levers, leversBeforeRejectedRequests);
+  }
+
+  // Deployer requests conflicting BRIDGE_MAINLINE while NORTH_TO_BRIDGE is active -> rejected by EARS-ILK-06 without mutating Lever #7
+  const rejectDeployer = executeSignalBoxMcpTool(store, {
+    toolName: 'request_route',
+    agentId: 'Deployer',
+    routeId: 'BRIDGE_MAINLINE',
+  });
+  assert.equal(rejectDeployer.isError, false);
+  if (!rejectDeployer.isError && rejectDeployer.toolName === 'request_route') {
+    assert.equal(rejectDeployer.granted, false);
+    assert.equal(rejectDeployer.blockingRuleId, 'EARS-ILK-06');
+    assert.deepEqual(rejectDeployer.frameState.levers, leversBeforeRejectedRequests);
   }
 
   // 3. inspect_interlock returns current frame, topology, and tappetBars

@@ -29,3 +29,4 @@
 
 - **Batch execution & testing mode**: `execution_mode=subagent-driven` (`1b`), `testing_mode=tdd` (`2a`), covering Tickets `01`, `02`, `03` — User verbatim choice: `"1b, 2a"`.
 - **Ticket 01 TDD & YAGNI Verification**: `tests/ticket-01-interlocking-and-kiro.test.ts` written first at `Seam 1` (observed RED: 0 pass / 6 fail), then implemented `.kiro/{specs,steering,hooks}` and `src/lib/interlocking.ts`. Applied `[ticket-yagni]` cuts (removed `isValidIntent`, `LeverRole`, `LeverMetadata`, `LEVER_CATALOG`; trimmed `RouteMetadata`). Verified GREEN: 6/6 tests pass (`70.7ms`) and `tsc --noEmit` 0 errors.
+- **Step 3.4/3.5 Code Review (`typescript-reviewer`)**: `Failure-miss: F2 — applyLeverAction 收到非 PULL/RELEASE 的 action.intent 時未拒絕，反而在 targetLeverState 退回 NORMAL 並因 rule.targetIntent === action.intent 比對不到任何 RELEASE 規則而直接解除背鎖拉桿` → Confirmed (`G4`), fixed inline in `applyLeverAction` and `ruleIlk05Cursed`.

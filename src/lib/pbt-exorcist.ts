@@ -128,15 +128,10 @@ export const runInterlockingExorcism = (
         topo.p1NoConflictingRoutes && topo.p2SignalPointLockIntegrity;
 
       if (!invariantsHold) {
-        if (!topo.p1NoConflictingRoutes) {
-          if (firstFailingOriginalLength === null) {
-            firstFailingOriginalLength = actions.length;
-          }
-          return false;
+        if (firstFailingOriginalLength === null) {
+          firstFailingOriginalLength = actions.length;
         }
-        // When a sequence hits P2 misalignment before a P1 route collision on the cursed preset,
-        // stop mutating this sequence so shrinking isolates the 3-step P1 route collision.
-        return true;
+        return false;
       }
     }
 

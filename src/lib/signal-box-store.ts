@@ -308,27 +308,30 @@ function buildRouteActionSequence(
   routeId: RouteId,
 ): LeverAction[] {
   const { levers } = frame;
-  const junctionSignalsClear =
+  const anySignalClear =
     levers[1] === 'REVERSE' ||
     levers[4] === 'REVERSE' ||
+    levers[5] === 'REVERSE' ||
     levers[6] === 'REVERSE';
 
   if (routeId === 'NORTH_TO_BRIDGE') {
     const actions: LeverAction[] = [];
-    if (levers[2] === 'REVERSE' && !junctionSignalsClear) {
-      if (levers[3] === 'REVERSE') {
-        actions.push({ leverId: 3, intent: 'RELEASE' });
+    if (!anySignalClear && levers[8] === 'NORMAL') {
+      if (levers[2] === 'REVERSE') {
+        if (levers[3] === 'REVERSE') {
+          actions.push({ leverId: 3, intent: 'RELEASE' });
+        }
+        actions.push({ leverId: 2, intent: 'RELEASE' });
       }
-      actions.push({ leverId: 2, intent: 'RELEASE' });
+      actions.push({ leverId: 3, intent: 'PULL' });
     }
-    actions.push({ leverId: 3, intent: 'PULL' });
     actions.push({ leverId: 1, intent: 'PULL' });
     return actions;
   }
 
   if (routeId === 'SOUTH_TO_BRIDGE') {
     const actions: LeverAction[] = [];
-    if (!junctionSignalsClear) {
+    if (!anySignalClear && levers[8] === 'NORMAL') {
       if (levers[2] === 'NORMAL') {
         if (levers[3] === 'REVERSE') {
           actions.push({ leverId: 3, intent: 'RELEASE' });
@@ -345,7 +348,7 @@ function buildRouteActionSequence(
 
   if (routeId === 'BRIDGE_MAINLINE') {
     const actions: LeverAction[] = [];
-    if (levers[7] === 'NORMAL') {
+    if (!anySignalClear && levers[8] === 'NORMAL' && levers[7] === 'NORMAL') {
       actions.push({ leverId: 7, intent: 'PULL' });
     }
     actions.push({ leverId: 5, intent: 'PULL' });
@@ -354,11 +357,17 @@ function buildRouteActionSequence(
 
   // AUDIT_SIDING
   const actions: LeverAction[] = [];
-  if (levers[8] === 'NORMAL') {
-    actions.push({ leverId: 8, intent: 'PULL' });
-  }
-  if (levers[3] === 'NORMAL') {
-    actions.push({ leverId: 3, intent: 'PULL' });
+  const mainlineSignalClear =
+    levers[1] === 'REVERSE' ||
+    levers[4] === 'REVERSE' ||
+    levers[5] === 'REVERSE';
+  if (!mainlineSignalClear) {
+    if (levers[8] === 'NORMAL') {
+      actions.push({ leverId: 8, intent: 'PULL' });
+    }
+    if (levers[3] === 'NORMAL') {
+      actions.push({ leverId: 3, intent: 'PULL' });
+    }
   }
   actions.push({ leverId: 6, intent: 'PULL' });
   return actions;

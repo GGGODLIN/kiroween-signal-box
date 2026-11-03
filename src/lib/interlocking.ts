@@ -261,12 +261,6 @@ export const getInterlockPreset = (presetId: PresetId): InterlockRule[] => {
       appliesToLever: 5,
       targetIntent: 'PULL',
       check: (levers) => {
-        if (levers[7] !== 'REVERSE') {
-          return {
-            allowed: false,
-            reason: 'Signal #5 requires Bridge Token Clearance #7 in REVERSE.',
-          };
-        }
         if (
           levers[1] !== 'NORMAL' ||
           levers[4] !== 'NORMAL' ||
@@ -281,6 +275,12 @@ export const getInterlockPreset = (presetId: PresetId): InterlockRule[] => {
           return {
             allowed: false,
             reason: 'Signal #5 is locked while Maintenance Isolation Lock #8 is REVERSE.',
+          };
+        }
+        if (levers[7] !== 'REVERSE') {
+          return {
+            allowed: false,
+            reason: 'Signal #5 requires Bridge Token Clearance #7 in REVERSE.',
           };
         }
         return { allowed: true };
@@ -311,6 +311,16 @@ export const getInterlockPreset = (presetId: PresetId): InterlockRule[] => {
       appliesToLever: 6,
       targetIntent: 'PULL',
       check: (levers) => {
+        if (
+          levers[1] !== 'NORMAL' ||
+          levers[4] !== 'NORMAL' ||
+          levers[5] !== 'NORMAL'
+        ) {
+          return {
+            allowed: false,
+            reason: 'Signal #6 requires mainline Signals #1, #4, and #5 in NORMAL.',
+          };
+        }
         if (levers[8] !== 'REVERSE') {
           return {
             allowed: false,
@@ -321,16 +331,6 @@ export const getInterlockPreset = (presetId: PresetId): InterlockRule[] => {
           return {
             allowed: false,
             reason: 'Signal #6 requires Facing Point Lock #3 plunged (REVERSE).',
-          };
-        }
-        if (
-          levers[1] !== 'NORMAL' ||
-          levers[4] !== 'NORMAL' ||
-          levers[5] !== 'NORMAL'
-        ) {
-          return {
-            allowed: false,
-            reason: 'Signal #6 requires mainline Signals #1, #4, and #5 in NORMAL.',
           };
         }
         return { allowed: true };
@@ -448,12 +448,18 @@ export const getInterlockPreset = (presetId: PresetId): InterlockRule[] => {
   // so the SUT permits clearing Signal #4 while Signal #1 is already REVERSE and Point #2 is NORMAL.
   const ruleIlk05Cursed: InterlockRule = {
     ruleId: 'EARS-ILK-05',
-    description: 'Cursed South Branch Signal #4 rule (missing Point #2 REVERSE and Signal #1 NORMAL checks).',
+    description: 'Cursed South Branch Signal #4 rule (missing Point #2 REVERSE and Signal #1 NORMAL checks when Signal #1 is REVERSE).',
     earsClause:
-      'WHEN pulling South Branch Home Signal #4, THE SYSTEM SHALL require FPL #3 in REVERSE and Maintenance Isolation Lock #8 in NORMAL (CURSED: missing Point #2 and Signal #1 checks).',
+      'WHEN pulling South Branch Home Signal #4, THE SYSTEM SHALL require FPL #3 in REVERSE and Maintenance Isolation Lock #8 in NORMAL (CURSED: missing Point #2 and Signal #1 checks when Signal #1 is REVERSE).',
     appliesToLever: 4,
     targetIntent: 'PULL',
     check: (levers) => {
+      if (levers[1] === 'NORMAL' && levers[2] !== 'REVERSE') {
+        return {
+          allowed: false,
+          reason: 'Signal #4 requires Junction Crossover Point #2 in REVERSE.',
+        };
+      }
       if (levers[3] !== 'REVERSE') {
         return {
           allowed: false,
@@ -520,8 +526,12 @@ export const applyLeverAction = (state: FrameState, action: LeverAction): FrameS
     action: { ...entry.action },
   }));
 
-  if (!action || !isValidLeverId(action.leverId)) {
-    const invalidReason = 'Invalid lever ID';
+  if (
+    !action ||
+    !isValidLeverId(action.leverId) ||
+    (action.intent !== 'PULL' && action.intent !== 'RELEASE')
+  ) {
+    const invalidReason = 'Invalid lever ID or action intent';
     const nextStep: StepHistoryEntry = {
       stepIndex: clonedHistory.length,
       action: {
@@ -542,7 +552,7 @@ export const applyLeverAction = (state: FrameState, action: LeverAction): FrameS
       blockingRuleId: 'EARS-VAL-01',
       blockingReason: invalidReason,
       blockingEarsClause:
-        'WHEN an out-of-range lever identifier is submitted, THE SYSTEM SHALL reject the action with INVALID_INPUT and preserve the existing frame state without mutation.',
+        'WHEN an out-of-range lever identifier or unsupported action intent is submitted, THE SYSTEM SHALL reject the action with INVALID_INPUT and preserve the existing frame state without mutation.',
       stepHistory: [...clonedHistory, nextStep],
     };
   }

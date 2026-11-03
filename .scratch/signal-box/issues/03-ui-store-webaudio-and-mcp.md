@@ -28,3 +28,6 @@
 
 - **Ticket 03 TDD & Verification**: `tests/ticket-03-ui-store-and-mcp.test.ts` written first at `Seam 2` (observed RED: 0 pass / 5 fail), then implemented `src/lib/signal-box-store.ts`, `src/app/api/mcp/route.ts`, `src/app/layout.tsx`, and `src/app/page.tsx`. Verified GREEN: 18/18 tests across `tests/ticket-01..03*.test.ts` pass (`107.3ms`), `tsc --noEmit` 0 errors, and `npm run build` succeeds cleanly.
 - **ticket-yagni runner status**: Runner returned `Unreviewed: relay http 502: {"error_body": "selected backend unavailable\n"}`; recorded per `/implement` Step 2 rule (full YAGNI review will also run at Step 3 Close out via `review-implement`).
+- **Step 3.4/3.5 Code Review (`typescript-reviewer`)**:
+  - `Failure-miss: F1 — executeSignalBoxMcpTool 的 request_route 直接對 store 逐步執行多步拉桿動作，當最後一步號誌拉桿被聯鎖拒絕（granted: false）時，前面步驟已扳動的轉轍器／鎖定／路牌拉桿殘留在 REVERSE 狀態` → Confirmed (`G4`), fixed in `src/lib/interlocking.ts` and `src/lib/signal-box-store.ts`.
+  - `Failure-miss: F2 — 當 evaluatePhysicalTopology 因 P2_SIGNAL_POINT_LOCK_INTEGRITY 判定 safe 為 false 時 collisionBlocks 為空陣列，UI 徽章固定拼接 collisionBlocks.join(', ') 而顯示空白的 "COLLISION: "，且 playMechanicalSound 每次新建 AudioContext` → Confirmed (`G4`), fixed in `src/app/page.tsx`.
