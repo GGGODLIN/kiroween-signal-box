@@ -31,3 +31,4 @@
 - **Step 3.4/3.5 Code Review (`typescript-reviewer`)**:
   - `Failure-miss: F1 — executeSignalBoxMcpTool 的 request_route 直接對 store 逐步執行多步拉桿動作，當最後一步號誌拉桿被聯鎖拒絕（granted: false）時，前面步驟已扳動的轉轍器／鎖定／路牌拉桿殘留在 REVERSE 狀態` → Confirmed (`G4`), fixed in `src/lib/interlocking.ts` and `src/lib/signal-box-store.ts`.
   - `Failure-miss: F2 — 當 evaluatePhysicalTopology 因 P2_SIGNAL_POINT_LOCK_INTEGRITY 判定 safe 為 false 時 collisionBlocks 為空陣列，UI 徽章固定拼接 collisionBlocks.join(', ') 而顯示空白的 "COLLISION: "，且 playMechanicalSound 每次新建 AudioContext` → Confirmed (`G4`), fixed in `src/app/page.tsx`.
+- **Step 8 Architecture Visual Gate & Deep-Check Decision**: `status=waived`, `human_decision="1b, 2b"` (user waived Archify/Plannotator actual-delta diagram and `/deep-check`), `feature_base_sha=3090e24a57636300a548930b1ab835880ec5332c`, `head_sha=5c8b6bd6c9f6972f5f24b789b03b0f561c72c949`.
