@@ -64,6 +64,13 @@ export type CounterexampleReplayBundle = {
   - `Seam 1`: Interlocking state machine, EARS rule compiler, independent physical topology oracle, and `fast-check` PBT Exorcist + counterexample replay.
   - `Seam 2`: Signal Box interactive store, MCP tool handlers (`request_route`, `release_route`, `inspect_interlock`, `run_pbt_exorcism`), and `.kiro/` specification/hook structural integrity.
 - **Post-Hackathon PBT Trial Receipt**: The test suite and UI generate a measurable receipt (oracle discrimination, generator state reachability counts, shrunken sequence length vs original length, and execution duration in ms) to feed our scheduled post-hackathon harness review.
+  - **Measured PBT Trial Receipt (Ticket 02 Verification Write-Back)**:
+    - `oracleDiscriminatesFault`: `true` (`STANDARD_SAFE` passes 80 runs / 461 stepwise assertions with 0 violations; `CURSED_MISSING_CROSSOVER_LOCK` fails at run 3 / 122 stepwise assertions on `P1_NO_CONFLICTING_ROUTES` with `collisionBlocks: ["junction-throat", "schema-bridge"]` and `missingRuleId: "EARS-ILK-01"`).
+    - `reachabilityWitnesses`: `{ clearedSignalCount: 19, blockedInterlockCount: 100, appliedActionCount: 98 }` (confirming non-vacuous exploration of both active routes and mechanical blocks).
+    - `shrinkingRatio`: `{ originalLength: 11, shrunkLength: 3, reductionFactor: 3.67 }` (`fast-check` shrinks an 11-step random sequence down to the exact 3-step minimal counterexample: `PULL #3 -> PULL #1 -> PULL #4`, `failingStepIndex: 2`).
+    - `replayDeterministic`: `true` (`replayCounterexampleSequence` deterministically reproduces the exact violation from `shrunkActions` without RNG state).
+    - `executionDurationMs`: `1–2 ms` total for 583 stepwise assertions across both presets.
+    - `stepwiseAssertionsChecked`: `583`.
 
 ## Out of Scope
 
