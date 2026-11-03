@@ -1,0 +1,21 @@
+# Dependencies & build output
+node_modules/
+.next/
+out/
+dist/
+build/
+
+# Local environment & OS
+.DS_Store
+*.pem
+.env*.local
+.claude/worktrees/
+
+# TypeScript & logs
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+
+# IMPORTANT: Kiroween 2026 rules require /.kiro at repo root to NOT be ignored!
+!/.kiro/
+!/.kiro/**
