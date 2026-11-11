@@ -5,7 +5,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { replayCounterexampleSequence } from '../src/lib/pbt-exorcist.ts';
-import { POST as postMcpRoute } from '../src/app/api/mcp/route.ts';
+import { POST as postMcpRoute, GET as getMcpRoute } from '../src/app/api/mcp/route.ts';
 import {
   createSignalBoxStore,
   executeSignalBoxMcpTool,
@@ -325,4 +325,89 @@ test('AC 5: Next.js UI and MCP route files exist and render the Victorian brass 
   };
   assert.equal(invalidBody.isError, true);
   assert.equal(invalidBody.errorCode, 'UNKNOWN_MCP_TOOL');
+});
+
+test('route owners reject cross-agent release and takeover without changing held state', () => {
+  for (const routeId of ['NORTH_TO_BRIDGE', 'SOUTH_TO_BRIDGE', 'BRIDGE_MAINLINE', 'AUDIT_SIDING'] as const) {
+    const store = createSignalBoxStore();
+    const grant = executeSignalBoxMcpTool(store, { toolName: 'request_route', routeId, agentId: 'owner' });
+    assert.equal(!grant.isError && grant.toolName === 'request_route' && grant.granted, true);
+    const held = structuredClone(store.getState());
+    assert.equal(held.frame.activeRoutes[0].routeId, routeId);
+    assert.equal(held.routeOwners[routeId], 'owner');
+    for (const toolName of ['release_route', 'request_route']) {
+      const denied = executeSignalBoxMcpTool(store, { toolName, routeId, agentId: 'intruder' });
+      assert.equal(denied.isError && denied.errorCode, 'ROUTE_NOT_OWNED');
+      assert.deepEqual(store.getState(), held);
+    }
+    executeSignalBoxMcpTool(store, { toolName: 'run_pbt_exorcism', agentId: 'intruder' });
+    assert.deepEqual(store.getState(), held);
+    const release = executeSignalBoxMcpTool(store, { toolName: 'release_route', routeId, agentId: 'owner' });
+    assert.equal(!release.isError && release.toolName === 'release_route' && release.released, true);
+    assert.equal(store.getState().routeOwners[routeId], undefined);
+    const nextOwner = executeSignalBoxMcpTool(store, { toolName: 'request_route', routeId, agentId: 'next-owner' });
+    assert.equal(!nextOwner.isError && nextOwner.toolName === 'request_route' && nextOwner.granted, true);
+    assert.equal(store.getState().routeOwners[routeId], 'next-owner');
+    store.switchPreset('STANDARD_SAFE');
+    assert.deepEqual(store.getState().routeOwners, {});
+  }
+});
+
+async function rpc(payload: unknown): Promise<Response> {
+  return postMcpRoute(new Request('http://localhost:3000/api/mcp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    body: JSON.stringify(payload),
+  }));
+}
+
+test('MCP JSON-RPC initializes, acknowledges notification, lists schemas and calls tools', async () => {
+  const initialized = await rpc({ jsonrpc: '2.0', id: 0, method: 'initialize', params: {
+    protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'acceptance-test', version: '1' },
+  } });
+  assert.equal(initialized.status, 200);
+  const init = await initialized.json();
+  assert.equal(init.jsonrpc, '2.0');
+  assert.equal(init.id, 0);
+  assert.equal(typeof init.result.protocolVersion, 'string');
+  assert.deepEqual(init.result.capabilities.tools, {});
+  const notification = await rpc({ jsonrpc: '2.0', method: 'notifications/initialized' });
+  assert.equal(notification.status, 202);
+  assert.equal(await notification.text(), '');
+  const listed = await rpc({ jsonrpc: '2.0', id: 'list', method: 'tools/list' });
+  const list = await listed.json();
+  assert.equal(list.id, 'list');
+  assert.deepEqual(list.result.tools.map((tool: { name: string }) => tool.name),
+    ['request_route', 'release_route', 'inspect_interlock', 'run_pbt_exorcism']);
+  assert.equal(list.result.tools[0].inputSchema.required.includes('routeId'), true);
+  const call = await rpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: {
+    name: 'inspect_interlock', arguments: { agentId: 'Verifier' },
+  } });
+  const called = await call.json();
+  assert.equal(called.id, 3);
+  assert.equal(called.result.isError, false);
+  assert.equal(JSON.parse(called.result.content[0].text).toolName, 'inspect_interlock');
+  assert.equal(getMcpRoute().status, 405);
+});
+
+test('MCP handles parse errors, unknown methods/tools, invalid envelopes and foreign origins', async () => {
+  const malformed = await postMcpRoute(new Request('http://localhost:3000/api/mcp', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{',
+  }));
+  assert.equal(malformed.status, 400);
+  assert.equal((await malformed.json()).error.code, -32700);
+  const unknown = await rpc({ jsonrpc: '2.0', id: 4, method: 'missing/method' });
+  assert.equal((await unknown.json()).error.code, -32601);
+  const invalid = await rpc({ jsonrpc: '1.0', id: 5, method: 'tools/list' });
+  assert.equal(invalid.status, 400);
+  const badTool = await rpc({ jsonrpc: '2.0', id: 6, method: 'tools/call', params: {
+    name: 'missing', arguments: { agentId: 'Verifier' },
+  } });
+  const result = await badTool.json();
+  assert.equal(result.result.isError, true);
+  const foreign = await postMcpRoute(new Request('http://localhost:3000/api/mcp', {
+    method: 'POST', headers: { Origin: 'https://foreign.invalid' },
+    body: JSON.stringify({ toolName: 'inspect_interlock', agentId: 'Verifier' }),
+  }));
+  assert.equal(foreign.status, 403);
 });

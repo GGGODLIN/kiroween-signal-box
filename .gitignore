@@ -10,6 +10,7 @@ build/
 *.pem
 .env*.local
 .claude/worktrees/
+.scratch/
 
 # TypeScript & logs
 *.tsbuildinfo

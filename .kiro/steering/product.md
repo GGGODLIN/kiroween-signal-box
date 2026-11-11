@@ -1,7 +1,7 @@
 # Product Steering — Signal Box (LeverFrame)
 
 ## Vision
-**Signal Box (LeverFrame)** resurrects the 19th-century Victorian mechanical railway interlocking signal box (`Tappet Locking Bed`) for **Kiroween 2026 (`Resurrection` category)**. It bridges 1850s railway safety engineering with modern multi-agent mutual exclusion (`Builder`, `Migrator`, `Deployer`, `Verifier`) and Spec-Driven Property-Based Testing (`fast-check`).
+**Signal Box (LeverFrame)** models a Victorian mechanical railway interlocking signal box (`Tappet Locking Bed`) in the browser for **Kiroween 2026 (`Resurrection` category)**. Builder, Migrator, Deployer, and Verifier represent concurrent agents in a simulation verified by `fast-check`. It does not lock actual files, databases, or production services.
 
 ## Core Principles
 1. **Mechanical Mutual Exclusion Before Execution**: Conflicting routes are blocked at the lever latch before two trains or coding agents can occupy the same shared block (`junction-throat`, `schema-bridge`, `prod-mainline`).

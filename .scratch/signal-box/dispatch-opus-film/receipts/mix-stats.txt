@@ -1,1 +1,0 @@
-mix.wav  45s  integrated -16.2 LUFS  true peak -4.3 dBTP  sample peak -4.6 dBFS  quiet 0.208  events 92  clipped-to-ceiling 1425

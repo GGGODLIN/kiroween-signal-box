@@ -20,7 +20,7 @@ const REPO_ROOT = path.resolve(TEST_DIR, '..');
 
 function isGitIgnored(repoRoot: string, relativePath: string): boolean {
   try {
-    execFileSync('git', ['-C', repoRoot, 'check-ignore', '-q', relativePath], {
+    execFileSync('git', ['-C', repoRoot, 'check-ignore', '--no-index', '-q', relativePath], {
       stdio: 'ignore',
     });
     return true;
@@ -88,11 +88,19 @@ test('AC 1: Root /.kiro/ directory contains required specs, steering, and hooks 
 
   // Positive control: prove isGitIgnored returns true for ignored paths before asserting /.kiro is not ignored
   assert.equal(isGitIgnored(REPO_ROOT, '.next/cache.json'), true);
-  assert.equal(
-    isGitIgnored(REPO_ROOT, '.kiro/specs/signal-box/requirements.md'),
-    false,
-    'Expected /.kiro files NOT to be ignored by .gitignore',
-  );
+  assert.equal(isGitIgnored(REPO_ROOT, '.scratch/internal.md'), true);
+  const trackedKiroFiles = execFileSync('git', ['-C', REPO_ROOT, 'ls-files', '.kiro'], {
+    encoding: 'utf8',
+  }).trim().split('\n');
+  assert.deepEqual(trackedKiroFiles.sort(), [...requiredKiroFiles].sort());
+  for (const relPath of [
+    ...requiredKiroFiles,
+    '.kiro/specs/example.env.local',
+    '.kiro/steering/sample.tsbuildinfo',
+    '.kiro/hooks/npm-debug.log',
+  ]) {
+    assert.equal(isGitIgnored(REPO_ROOT, relPath), false, `${relPath} must remain visible to Git`);
+  }
 });
 
 test('AC 2: Valid lever sequence clears North Up Main Signal #1 and activates NORTH_TO_BRIDGE route for Builder agent train (Story 1)', () => {

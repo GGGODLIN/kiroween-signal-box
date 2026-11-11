@@ -2,7 +2,7 @@
 
 ## 1. Architectural Overview
 
-Signal Box separates its safety-critical simulation into three strictly decoupled layers:
+Signal Box separates its simulation into four layers:
 
 1. **Mutable SUT Interlocking Engine (`src/lib/interlocking.ts`)**:
    - Models the 8-lever Victorian mechanical tappet frame (`STANDARD_SAFE` vs fault-injected `CURSED_MISSING_CROSSOVER_LOCK`).
@@ -14,9 +14,13 @@ Signal Box separates its safety-critical simulation into three strictly decouple
 3. **Stepwise PBT Exorcist & Counterexample Replay (`src/lib/pbt-exorcist.ts`)**:
    - Uses `fast-check` to generate unfiltered random `LeverAction[]` sequences (`1..25` steps).
    - Evaluates `evaluatePhysicalTopology` after every individual step.
-   - Captures shrunken minimal counterexample bundles (`CounterexampleReplayBundle`) and replays them step-by-step.
+   - `runInterlockingExorcism(presetId, options?)` records the first failing predicate input length before shrinking. `replayCounterexampleSequence(bundle)` replays the stored actions. `generatePbtTrialReceipt()` reports the measured ratio, including `1` when no shortening occurs.
+   - Defaults: seed `20261031`, 80 runs, `1..25` generated steps. On 2026-11-11, safe runs performed 461 step checks; the cursed run shrank 11 actions to 3. Counts vary with seed and dependency version.
 4. **Interactive Store, MCP Adapter & Victorian UI (`src/lib/signal-box-store.ts`, `src/app/page.tsx`)**:
-   - Exposes `request_route`, `release_route`, `inspect_interlock`, and `run_pbt_exorcism` for Kiro Crew / MCP agent coordination.
+   - Exposes `request_route`, `release_route`, `inspect_interlock`, and `run_pbt_exorcism` through the local dispatcher and a JSON-RPC MCP Streamable HTTP endpoint at `POST /api/mcp`.
+   - The official MCP SDK handles `initialize`, `notifications/initialized`, `tools/list`, and `tools/call`. Legacy `{ toolName, agentId, routeId? }` requests remain supported. Next.js runs in server mode; a static Pages mirror cannot serve this route.
+   - Each successful route request records its self-declared `agentId`. Other agents cannot take over or release the held route. Releasing a signal or resetting the frame clears its owner. MCP PBT tests use isolated frames and preserve held routes.
+   - The browser and server hold separate stores. The server store is process-local and may reset or diverge across Vercel instances. There is no authenticated agent identity, persistence, or distributed locking; this endpoint is a public simulation.
 
 ## 2. 8-Lever Station Topology
 

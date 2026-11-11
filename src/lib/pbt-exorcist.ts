@@ -83,8 +83,14 @@ function isValidAction(candidate: unknown): candidate is LeverAction {
   return validLever && validIntent;
 }
 
+export interface ExorcismOptions {
+  seed?: number;
+  examples?: [LeverAction[]][];
+}
+
 export const runInterlockingExorcism = (
   presetId: PresetId,
+  options: ExorcismOptions = {},
 ): ExorcismReport => {
   const startTime = performance.now();
 
@@ -140,7 +146,8 @@ export const runInterlockingExorcism = (
 
   const details = fc.check(property, {
     numRuns: DEFAULT_NUM_RUNS,
-    seed: DEFAULT_SEED,
+    seed: options.seed ?? DEFAULT_SEED,
+    examples: options.examples,
   });
 
   const executionDurationMs = Math.max(
@@ -171,10 +178,7 @@ export const runInterlockingExorcism = (
         intent: action.intent,
       }));
 
-    const originalLength = Math.max(
-      firstFailingOriginalLength ?? rawShrunk.length,
-      shrunkActions.length + 1,
-    );
+    const originalLength = firstFailingOriginalLength ?? rawShrunk.length;
 
     const counterexample: CounterexampleReplayBundle = {
       presetId,

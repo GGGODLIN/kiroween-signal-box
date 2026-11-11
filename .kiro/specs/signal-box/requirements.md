@@ -43,8 +43,17 @@
 
 ## 3. Correctness Properties for Stepwise Property-Based Testing (PBT)
 
+These properties specify `STANDARD_SAFE`; `CURSED_MISSING_CROSSOVER_LOCK` deliberately violates them to calibrate the independent oracle.
+
 ### `P1_NO_CONFLICTING_ROUTES` — Track Block Mutual Exclusion
 - **Clause:** WHEN any sequence of lever actions is executed step-by-step, THE SYSTEM SHALL guarantee that no physical track block (`north-approach`, `south-branch`, `junction-throat`, `schema-bridge`, `prod-mainline`, `audit-siding`) is occupied by two or more active signal routes simultaneously on the independent Physical Topology Oracle.
 
 ### `P2_SIGNAL_POINT_LOCK_INTEGRITY` — Signal-to-Point Alignment & Lock Integrity
 - **Clause:** WHEN any signal lever (#1, #4, #5, #6) is in the `REVERSE` (clear) state at any step, THE SYSTEM SHALL guarantee that every physical point, facing point lock, and clearance token required by that signal's physical route remains in its required alignment and locked state.
+
+## 4. MCP and Measurement Requirements
+
+- WHEN `request_route` succeeds, THE SYSTEM SHALL record its `agentId` as the route owner and reject another agent's takeover or release with `ROUTE_NOT_OWNED` before mutating the frame. These checks compare self-declared IDs; they do not authenticate callers.
+- WHEN an MCP client sends `initialize`, `notifications/initialized`, `tools/list`, or `tools/call`, THE SYSTEM SHALL use the official SDK's JSON-RPC 2.0 transport and preserve compatibility with the existing local tool dispatcher.
+- WHEN `runInterlockingExorcism` first detects a violation, THE SYSTEM SHALL capture that predicate input's actual array length as `originalLength`, without adding steps to manufacture shrinking. `replayCounterexampleSequence` SHALL consume the stored `shrunkActions`.
+- WHEN a sequence is already minimal, THE SYSTEM SHALL report equal original and replay lengths. Seed-specific assertion counts are measurements, not acceptance guarantees for arbitrary seeds.

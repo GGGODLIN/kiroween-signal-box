@@ -44,10 +44,12 @@ export interface SignalBoxStoreState {
   replayBundle: CounterexampleReplayBundle | null;
   replayCursor: number | null;
   collisionBanner: string | null;
+  routeOwners: Partial<Record<RouteId, string>>;
 }
 
 export interface SignalBoxStore {
   getState: () => SignalBoxStoreState;
+  setRouteOwner: (routeId: RouteId, agentId: string) => void;
   pullLever: (leverId: LeverId) => SignalBoxStoreState;
   releaseLever: (leverId: LeverId) => SignalBoxStoreState;
   switchPreset: (presetId: PresetId) => SignalBoxStoreState;
@@ -98,7 +100,8 @@ export interface SignalBoxMcpErrorResponse {
     | 'INVALID_MCP_REQUEST'
     | 'UNKNOWN_MCP_TOOL'
     | 'INVALID_AGENT_ID'
-    | 'INVALID_ROUTE_ID';
+    | 'INVALID_ROUTE_ID'
+    | 'ROUTE_NOT_OWNED';
   errorMessage: string;
 }
 
@@ -176,6 +179,7 @@ export function createSignalBoxStore(
     replayBundle: null,
     replayCursor: null,
     collisionBanner: null,
+    routeOwners: {},
   };
 
   const applyAction = (action: LeverAction): SignalBoxStoreState => {
@@ -192,12 +196,21 @@ export function createSignalBoxStore(
       tappetBars: nextTappetBars,
       lastSoundCue,
       collisionBanner,
+      routeOwners: Object.fromEntries(
+        Object.entries(state.routeOwners).filter(([routeId]) =>
+          nextFrame.activeRoutes.some((route) => route.routeId === routeId),
+        ),
+      ),
     };
     return state;
   };
 
   return {
     getState: () => state,
+
+    setRouteOwner: (routeId: RouteId, agentId: string): void => {
+      state = { ...state, routeOwners: { ...state.routeOwners, [routeId]: agentId } };
+    },
 
     pullLever: (leverId: LeverId): SignalBoxStoreState =>
       applyAction({ leverId, intent: 'PULL' }),
@@ -218,6 +231,7 @@ export function createSignalBoxStore(
         replayBundle: null,
         replayCursor: null,
         collisionBanner: null,
+        routeOwners: {},
       };
       return state;
     },
@@ -251,6 +265,7 @@ export function createSignalBoxStore(
         replayBundle,
         replayCursor: null,
         collisionBanner: null,
+        routeOwners: {},
       };
       return state;
     },
@@ -409,13 +424,15 @@ export function executeSignalBoxMcpTool(
   }
 
   if (toolName === 'run_pbt_exorcism') {
-    const after = store.runExorcism();
+    const trialReceipt = generatePbtTrialReceipt();
     return {
       isError: false,
       toolName: 'run_pbt_exorcism',
       agentId,
-      exorcismReport: after.exorcismReport!,
-      trialReceipt: after.trialReceipt!,
+      exorcismReport: store.getState().frame.presetId === 'STANDARD_SAFE'
+        ? trialReceipt.safeReport
+        : trialReceipt.cursedReport,
+      trialReceipt,
     };
   }
 
@@ -428,6 +445,18 @@ export function executeSignalBoxMcpTool(
   }
 
   const routeId = record.routeId;
+  const owner = store.getState().routeOwners[routeId];
+  const routeIsActive = store.getState().frame.activeRoutes.some(
+    (route) => route.routeId === routeId,
+  );
+  if ((owner !== undefined && owner !== agentId) ||
+      (toolName === 'release_route' && routeIsActive && owner !== agentId)) {
+    return {
+      isError: true,
+      errorCode: 'ROUTE_NOT_OWNED',
+      errorMessage: 'Only the agent that acquired this route may request or release it.',
+    };
+  }
 
   if (toolName === 'release_route') {
     const routeSpec = ROUTE_CATALOG[routeId];
@@ -482,6 +511,7 @@ export function executeSignalBoxMcpTool(
     }
   }
 
+  store.setRouteOwner(routeId, agentId);
   return {
     isError: false,
     toolName: 'request_route',

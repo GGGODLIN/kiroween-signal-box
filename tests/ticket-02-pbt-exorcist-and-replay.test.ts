@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import fc from 'fast-check';
 
+import {
+  applyLeverAction,
+  createFrameState,
+  evaluatePhysicalTopology,
+  type LeverAction,
+  type LeverId,
+} from '../src/lib/interlocking.ts';
 import {
   generatePbtTrialReceipt,
   replayCounterexampleSequence,
@@ -200,4 +208,49 @@ test('AC 7: Both direct CLI test replay and store-triggered replay consume the i
   assert.equal(directReplay.violatedProperty, directBundle.violatedProperty);
   assert.equal(storeReplay.violatedProperty, directReplay.violatedProperty);
   assert.deepEqual(storeReplay.collisionBlocks, directReplay.collisionBlocks);
+});
+
+test('originalLength equals the first failing input for fixed and randomly chosen seeds', () => {
+  const actionArb = fc.record({
+    leverId: fc.constantFrom<LeverId>(1, 2, 3, 4, 5, 6, 7, 8),
+    intent: fc.constantFrom<'PULL' | 'RELEASE'>('PULL', 'RELEASE'),
+  });
+  const sequenceArb = fc.array(actionArb, { minLength: 1, maxLength: 25 });
+  const seeds = [20261031, ...fc.sample(fc.integer(), 3)];
+  for (const seed of seeds) {
+    let firstFailure: LeverAction[] | null = null;
+    fc.check(fc.property(sequenceArb, (actions) => {
+      let state = createFrameState('CURSED_MISSING_CROSSOVER_LOCK');
+      for (const action of actions) {
+        state = applyLeverAction(state, action);
+        if (!evaluatePhysicalTopology(state).safe) {
+          firstFailure ??= actions;
+          return false;
+        }
+      }
+      return true;
+    }), { seed, numRuns: 80 });
+    const report = runInterlockingExorcism('CURSED_MISSING_CROSSOVER_LOCK', { seed });
+    if (firstFailure === null) {
+      assert.equal(report.counterexample, null);
+    } else {
+      assert.equal(report.counterexample?.originalLength, (firstFailure as LeverAction[]).length);
+    }
+    process.stdout.write(`LENGTH_SEED=${JSON.stringify({ seed, counterexample: report.counterexample })}\n`);
+  }
+});
+
+test('a minimal first failure reports no shrinking instead of inventing one extra action', () => {
+  const minimal: LeverAction[] = [
+    { leverId: 3, intent: 'PULL' },
+    { leverId: 1, intent: 'PULL' },
+    { leverId: 4, intent: 'PULL' },
+  ];
+  // 固定首筆案例讓第一個失敗本身已最小，才能觀察零縮短的真實邊界。
+  const bundle = runInterlockingExorcism('CURSED_MISSING_CROSSOVER_LOCK', {
+    examples: [[minimal]],
+  }).counterexample!;
+  assert.deepEqual(bundle.shrunkActions, minimal);
+  assert.equal(bundle.originalLength, 3);
+  assert.equal(bundle.originalLength / bundle.shrunkActions.length, 1);
 });
