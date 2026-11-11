@@ -20,3 +20,4 @@ npm-debug.log*
 # IMPORTANT: Kiroween 2026 rules require /.kiro at repo root to NOT be ignored!
 !/.kiro/
 !/.kiro/**
+.vercel
