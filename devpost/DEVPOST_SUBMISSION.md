@@ -2,7 +2,7 @@
 
 Signal Box is a browser simulation of a mechanical railway signal box. Builder and Migrator can request the same junction, but the locking rules refuse a conflicting route before its signal clears. The brass lever frame shows which lock stopped the action and cites its EARS requirement.
 
-[Try the browser demo](https://blog.gggodlin.com/kiroween-signal-box/) · [Watch the launch film](https://youtu.be/qXKqfpr7NzE) · [Read the source](https://github.com/GGGODLIN/kiroween-signal-box) · [Read the technical article](https://dev.to/gggodlin/resurrecting-the-1856-victorian-signal-box-with-kiro-spec-driven-development-property-based-oae)
+[Try the live Vercel workbench & MCP server](https://kiroween-signal-box.vercel.app) · [Static browser mirror](https://blog.gggodlin.com/kiroween-signal-box/) · [Watch the launch film](https://youtu.be/qXKqfpr7NzE) · [Read the source](https://github.com/GGGODLIN/kiroween-signal-box) · [Read the technical article](https://dev.to/gggodlin/resurrecting-the-1856-victorian-signal-box-with-kiro-spec-driven-development-property-based-oae)
 
 ## What it does
 
@@ -20,7 +20,7 @@ The [MCP route](https://github.com/GGGODLIN/kiroween-signal-box/blob/main/src/ap
 
 A granted route records its `agentId`. Another ID cannot take over or release it. This compares self-declared IDs; it does not authenticate an agent. The browser and HTTP stores are separate, process-local simulations. Server cold starts reset the HTTP store, and separate Vercel instances do not share locks. Signal Box does not coordinate real production deployments or provide distributed locking.
 
-The repository builds in Next.js server mode for Vercel, with a dynamic `POST /api/mcp`. The browser demo linked above is a static mirror and cannot serve that endpoint. **Production Vercel deployment and its public URL are pending verification.** Do not present the static demo URL as a live MCP server.
+The repository is deployed in Next.js server mode on Vercel at [kiroween-signal-box.vercel.app](https://kiroween-signal-box.vercel.app), serving the dynamic `POST https://kiroween-signal-box.vercel.app/api/mcp` endpoint (verified across JSON-RPC 2.0 `initialize`, `notifications/initialized`, `tools/list`, and `tools/call`; empty `GET` returns `405`). The GitHub Pages mirror linked above is a static browser demo only and does not serve `/api/mcp`.
 
 ## Specifications and AI assistance
 

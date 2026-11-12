@@ -46,7 +46,7 @@ In 1856, John Saxby solved physical mutual exclusion on Victorian railways using
    - Live SVG illuminated track diagram, 8-lever brass frame, Tappet Locking Bed with EARS rule citations, step-by-step Shrinking Counterexample Replay controls, and WebAudio synthesized mechanical sounds (`LEVER_LATCH`, `INTERLOCK_CLANK`, `COLLISION_ALARM`, `BELL_CHIME`).
    - Deterministic MCP tool dispatcher (`request_route`, `release_route`, `inspect_interlock`, `run_pbt_exorcism`) exposed in-memory and at `POST /api/mcp`. The HTTP endpoint supports JSON-RPC 2.0 initialization, notifications, discovery, and tool calls through the official MCP SDK, alongside the legacy request format.
    - Routes record the acquiring `agentId`; another ID cannot take over or release a held route. IDs are self-declared, and the HTTP store is process-local. This is a public simulation, not an authenticated or distributed lock service. Browser and server stores are separate; cold starts reset server state.
-   - Deploy this repository in Next.js server mode on Vercel (`npm run build`); `POST /api/mcp` is dynamic. A GitHub Pages mirror only serves the browser demo. The production Vercel URL and remote endpoint still require deployment verification.
+   - Deployed in Next.js server mode on Vercel at [kiroween-signal-box.vercel.app](https://kiroween-signal-box.vercel.app) with dynamic `POST https://kiroween-signal-box.vercel.app/api/mcp` (verified on 2026-11-12 across JSON-RPC 2.0 `initialize`, `notifications/initialized`, `tools/list`, and `tools/call`; empty `GET` returns `405`). The [GitHub Pages mirror](https://blog.gggodlin.com/kiroween-signal-box/) serves only the static browser demo.
 
 ---
 
