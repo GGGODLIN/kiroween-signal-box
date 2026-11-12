@@ -2,7 +2,7 @@
 
 Signal Box is a browser simulation of a mechanical railway signal box. Builder and Migrator can request the same junction, but the locking rules refuse a conflicting route before its signal clears. The brass lever frame shows which lock stopped the action and cites its EARS requirement.
 
-[Try the live Vercel workbench & MCP server](https://kiroween-signal-box.vercel.app) · [Static browser mirror](https://blog.gggodlin.com/kiroween-signal-box/) · [Watch the launch film](https://youtu.be/qXKqfpr7NzE) · [Read the source](https://github.com/GGGODLIN/kiroween-signal-box) · [Read the technical article](https://dev.to/gggodlin/resurrecting-the-1856-victorian-signal-box-with-kiro-spec-driven-development-property-based-oae)
+[Try the live Vercel workbench & MCP server](https://kiroween-signal-box.vercel.app) · [Static browser mirror](https://blog.gggodlin.com/kiroween-signal-box/) · [Watch the launch film](https://youtu.be/qXKqfpr7NzE) · [Read the source](https://github.com/GGGODLIN/kiroween-signal-box) · [Read the DEV.to Blog Post (`Bonus Blog Prize`)](https://dev.to/gggodlin/resurrecting-the-1856-victorian-signal-box-with-kiro-spec-driven-development-property-based-oae) · [X Social Post (`#KiroweenHackathon26`)](https://x.com/GGGODLIN/status/2119290388783812830)
 
 ## What it does
 
